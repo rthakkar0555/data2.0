@@ -100,7 +100,7 @@ async def process_query(request: QueryRequest):
 
         if not search_result and qdrant_filter:
             # fallback: retry without filter
-            logger.warning(f"No results with filter, retrying without filter for query: {query}")
+            logger.warning(f"\n\n\n\n\n\nNo results with filter, retrying without filter for query: {query}")
             search_result = vector_db.similarity_search(query=query, k=5)
 
         if not search_result:
@@ -129,7 +129,7 @@ async def process_query(request: QueryRequest):
         - Answer ONLY using the information in the Context below. Do not add outside knowledge, guesses, or general guidance.
         - If the requested information is not in Context, say exactly: "Not found in Context."
         - Answer in English. Keep tone clear, empathetic, and concise.
-        - For every fact or step derived from Context, append a citation: [src: page_label=<PAGE_LABEL> pdf_path=<PDF_PATH>].
+        - For every fact or step derived from Context, append a citation: [src: page_label=<PAGE_LABEL> pdf_uri=<PDF_URI>].
         - Prioritize safety: warn before risky steps; include unplug/power-off where indicated by Context.
         - if the question is not related about manual guidandce usage troubleshooting or maintenance then say i am cant help with that.
         - if question is about troubleshooting or maintence then provide step by step guidance.
