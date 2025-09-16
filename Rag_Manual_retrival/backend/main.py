@@ -14,6 +14,9 @@ import chat
 from pypdf import PdfReader
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 load_dotenv()
 
@@ -58,6 +61,41 @@ except Exception as e:
     mongo_db = None
     mongo_collection = None
 
+# -----------------------------
+# Cloudinary setup
+# -----------------------------
+cloudinary.config(
+    cloud_name="rishiproject",
+    api_key="451394548967359",
+    api_secret="vQi8o9Cjypie4bHxvhrDSKdZjFs"
+)
+
+def upload_to_cloudinary(file_path: str, public_id: str = None) -> dict:
+    """
+    Upload a file to Cloudinary and return the upload result
+    """
+    try:
+        result = cloudinary.uploader.upload(
+            file_path,
+            resource_type="raw",  # For PDF files
+            public_id=public_id,
+            folder="pdf_manuals"  # Organize PDFs in a folder
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cloudinary upload failed: {str(e)}")
+
+def delete_from_cloudinary(public_id: str) -> bool:
+    """
+    Delete a file from Cloudinary using its public_id
+    """
+    try:
+        result = cloudinary.uploader.destroy(public_id, resource_type="raw")
+        return result.get("result") == "ok"
+    except Exception as e:
+        print(f"Cloudinary deletion failed: {e}")
+        return False
+
 # Store list of uploaded files
 uploaded_files = []
 current_company_name: str | None = None
@@ -81,7 +119,7 @@ async def upload_pdf(
         # client = QdrantClient(url="http://localhost:6333")
         # client.delete_collection(collection_name='learn_vector')
 
-        # Save uploaded file
+        # Save uploaded file temporarily for processing
         file_path = UPLOAD_DIR / file.filename
         with file_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -91,8 +129,20 @@ async def upload_pdf(
         if not resolved_product_name:
             raise HTTPException(status_code=400, detail="product_name or product_code is required")
 
-        # Local URI placeholder (to be replaced with Cloudinary later)
-        local_uri = str(file_path)
+        # Upload to Cloudinary
+        try:
+            cloudinary_result = upload_to_cloudinary(
+                str(file_path), 
+                public_id=f"{company_name}_{resolved_product_name}_{file.filename}"
+            )
+            cloudinary_uri = cloudinary_result["secure_url"]
+            cloudinary_public_id = cloudinary_result["public_id"]
+            print(f"✅ File uploaded to Cloudinary: {cloudinary_uri}")
+        except Exception as e:
+            # Clean up local file if Cloudinary upload fails
+            if file_path.exists():
+                file_path.unlink()
+            raise HTTPException(status_code=500, detail=f"Failed to upload to Cloudinary: {str(e)}")
 
         # Insert metadata record in MongoDB
         try:
@@ -102,7 +152,8 @@ async def upload_pdf(
             insert_doc = {
                 "company_name": company_name,
                 "product_name": resolved_product_name,
-                "uri": local_uri,
+                "uri": cloudinary_uri,
+                "cloudinary_public_id": cloudinary_public_id,
                 "filename": file.filename,
             }
             insert_result = mongo_collection.insert_one(insert_doc)
@@ -124,9 +175,9 @@ async def upload_pdf(
             pdf_meta["creationdate"] = info.get("/CreationDate") or info.get("creationdate")
             pdf_meta["moddate"] = info.get("/ModDate") or info.get("moddate")
             pdf_meta["total_pages"] = len(reader.pages)
-            pdf_meta["source"] = str(file_path)
+            pdf_meta["source"] = cloudinary_uri
         except Exception:
-            pdf_meta = {"source": str(file_path)}
+            pdf_meta = {"source": cloudinary_uri}
 
         # Load PDF
         loader = PyPDFLoader(file_path=str(file_path))
@@ -137,6 +188,8 @@ async def upload_pdf(
             d.metadata["company_name"] = company_name
             d.metadata["product_name"] = resolved_product_name
             d.metadata["product_code"] = product_code
+            # Override the source with Cloudinary URI (PyPDFLoader sets it to local path)
+            d.metadata["source"] = cloudinary_uri
             # Merge core PDF metadata into page-level docs
             for k, v in pdf_meta.items():
                 if v is not None:
@@ -155,6 +208,8 @@ async def upload_pdf(
             d.metadata["db_id"] = inserted_id
             d.metadata["company_name"] = company_name
             d.metadata["product_code"] = product_code
+            # Ensure source is set to Cloudinary URI in chunks
+            d.metadata["source"] = cloudinary_uri
             # Preserve page metadata and core PDF metadata into chunks
             for k, v in pdf_meta.items():
                 if v is not None:
@@ -175,6 +230,14 @@ async def upload_pdf(
             print("   Documents processed but not stored in vector database")
             # Continue without Qdrant - the upload will still succeed
 
+        # Clean up local file after successful processing
+        try:
+            if file_path.exists():
+                file_path.unlink()
+                print(f"✅ Local file {file.filename} cleaned up")
+        except Exception as cleanup_err:
+            print(f"⚠️  Local file cleanup failed: {cleanup_err}")
+
         # Add file to uploaded_files list
         uploaded_files.append(file.filename)
         return {
@@ -184,7 +247,8 @@ async def upload_pdf(
                 "_id": inserted_id,
                 "company_name": company_name,
                 "product_name": resolved_product_name,
-                "uri": local_uri,
+                "uri": cloudinary_uri,
+                "cloudinary_public_id": cloudinary_public_id,
             }
         }
     except Exception as e:
@@ -272,6 +336,9 @@ async def delete_manual(
         if not mongo_doc:
             raise HTTPException(status_code=404, detail="Manual not found in database")
         
+        # Get Cloudinary public_id for deletion
+        cloudinary_public_id = mongo_doc.get("cloudinary_public_id")
+        
         # Delete from MongoDB
         mongo_result = mongo_collection.delete_one({
             "product_name": product_name,
@@ -280,6 +347,18 @@ async def delete_manual(
         
         if mongo_result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Failed to delete from MongoDB")
+        
+        # Delete from Cloudinary if public_id exists
+        cloudinary_deleted = False
+        if cloudinary_public_id:
+            try:
+                cloudinary_deleted = delete_from_cloudinary(cloudinary_public_id)
+                if cloudinary_deleted:
+                    print(f"✅ File deleted from Cloudinary: {cloudinary_public_id}")
+                else:
+                    print(f"⚠️  Failed to delete from Cloudinary: {cloudinary_public_id}")
+            except Exception as cloudinary_err:
+                print(f"⚠️  Cloudinary deletion error: {cloudinary_err}")
         
         # Delete from Qdrant DB using metadata filter
         try:
@@ -361,19 +440,10 @@ async def delete_manual(
             # Continue even if Qdrant deletion fails - MongoDB deletion succeeded
             # This ensures data consistency where MongoDB is the source of truth
         
-        # Remove physical file if it exists
-        try:
-            file_path = UPLOAD_DIR / product_code
-            if file_path.exists():
-                file_path.unlink()
-                print(f"✅ Physical file {product_code} deleted")
-        except Exception as file_err:
-            print(f"⚠️  File deletion failed: {file_err}")
-            # Continue even if file deletion fails
-        
         return {
             "message": f"Manual '{product_name}' ({product_code}) deleted successfully",
             "mongo_deleted": mongo_result.deleted_count,
+            "cloudinary_deleted": cloudinary_deleted,
             "product_name": product_name,
             "product_code": product_code
         }
