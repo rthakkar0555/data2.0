@@ -1,8 +1,10 @@
 import logging
+import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from qdrant_client.http import models       
 from langchain_openai import OpenAIEmbeddings
+from nvidia_embeddings import NVIDIANIMEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -13,18 +15,21 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# Initialize OpenAI client with error handling
+# Initialize NVIDIA NIM client with error handling
 try:
-    client = OpenAI()
+    client = OpenAI(
+        base_url="https://integrate.api.nvidia.com/v1",
+        api_key="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"
+    )
     # Test the client
     client.chat.completions.create(
-        model="gpt-4o",
+        model="nvidia/llama-3.1-nemotron-70b-instruct",
         messages=[{"role": "user", "content": "Test"}],
         max_tokens=1
     )
-    print("OpenAI client initialized successfully")
+    print("NVIDIA NIM client initialized successfully")
 except Exception as e:
-    print(f"OpenAI client initialization failed: {e}")
+    print(f"NVIDIA NIM client initialization failed: {e}")
     client = None
 
 router = APIRouter()
@@ -42,13 +47,13 @@ async def health_check():
         qdrant.get_collections()  # Test Qdrant connection
         
         if client is None:
-            raise Exception("OpenAI client not initialized")
+            raise Exception("NVIDIA NIM client not initialized")
         
         client.chat.completions.create(
-            model="gpt-4o",
+            model="nvidia/llama-3.1-nemotron-70b-instruct",
             messages=[{"role": "user", "content": "Test"}],
             max_tokens=1
-        )  # Test OpenAI connection
+        )  # Test NVIDIA NIM connection
         return {"status": "healthy"}
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}", exc_info=True)
@@ -63,18 +68,18 @@ async def process_query(request: QueryRequest):
         logger.info(f"\n\n\n\ncompany_name: {company_name}, product_code: {product_code}\n\n\n\n")
 
         # Embedding
-        embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
+        embedding_model = NVIDIANIMEmbeddings()
 
         # Connect to Qdrant
         try:
             vector_db = QdrantVectorStore.from_existing_collection(
                 url="http://localhost:6333",
-                collection_name="learn_vector2",
+                collection_name="learn_vector3",
                 embedding=embedding_model
             )
         except Exception as e:
             logger.error(f"Failed to connect to Qdrant collection: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=400, detail="Vector database not available. Please ensure Qdrant is running and documents are uploaded.")
+            raise HTTPException(status_code=400, detail=f"{str(e)} Vector database not available. Please ensure Qdrant is running and documents are uploaded.")
 
         # -----------------------------
         # ✅ Metadata filtering
@@ -137,16 +142,19 @@ async def process_query(request: QueryRequest):
         {context}
         """
 
-        # Get response from OpenAI
+        # Get response from NVIDIA NIM
         if client is None:
-            raise HTTPException(status_code=500, detail="OpenAI client not initialized")
+            raise HTTPException(status_code=500, detail="NVIDIA NIM client not initialized")
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="nvidia/llama-3.1-nemotron-70b-instruct",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query}
-            ]
+            ],
+            temperature=0.5,
+            top_p=1,
+            max_tokens=1024
         )
 
         return {"response": response.choices[0].message.content}
