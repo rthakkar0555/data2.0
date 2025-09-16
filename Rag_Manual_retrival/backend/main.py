@@ -4,6 +4,7 @@ from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
+from nvidia_embeddings import NVIDIANIMEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -217,11 +218,11 @@ async def upload_pdf(
 
         # Create embeddings and store in Qdrant
         try:
-            embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
+            embedding_model = NVIDIANIMEmbeddings()
             QdrantVectorStore.from_documents(
                 documents=split_docs,
                 url="http://localhost:6333",
-                collection_name='learn_vector2',
+                collection_name='learn_vector3',
                 embedding=embedding_model
             )
             print("✅ Documents stored in Qdrant successfully")
@@ -382,7 +383,7 @@ async def delete_manual(
                 )
                 
                 search_result = qdrant_client.scroll(
-                    collection_name="learn_vector2",
+                    collection_name="learn_vector3",
                     scroll_filter=db_id_filter,
                     limit=10
                 )
@@ -392,7 +393,7 @@ async def delete_manual(
                 
                 if points_found > 0:
                     delete_result = qdrant_client.delete(
-                        collection_name="learn_vector2",
+                        collection_name="learn_vector3",
                         points_selector=models.FilterSelector(filter=db_id_filter)
                     )
                     print(f"✅ Deleted {points_found} points using db_id with operation ID: {delete_result.operation_id}")
@@ -416,7 +417,7 @@ async def delete_manual(
                 )
                 
                 search_result = qdrant_client.scroll(
-                    collection_name="learn_vector2",
+                    collection_name="learn_vector3",
                     scroll_filter=qdrant_filter,
                     limit=10
                 )
@@ -426,7 +427,7 @@ async def delete_manual(
                 
                 if points_found > 0:
                     delete_result = qdrant_client.delete(
-                        collection_name="learn_vector2",
+                        collection_name="learn_vector3",
                         points_selector=models.FilterSelector(filter=qdrant_filter)
                     )
                     print(f"\n\n\n\n\n\n\n\n\n\nn\n\n✅ Deleted {points_found} points using product_name/filename with operation ID: {delete_result.operation_id}\n\n\n\n\n\n\n\n\n\n\n\n\n")
