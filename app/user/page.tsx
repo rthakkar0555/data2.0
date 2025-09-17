@@ -10,10 +10,13 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Upload, FileText, Send, User, Bot, Loader2 } from "lucide-react"
+import { Search, Upload, FileText, Send, User, Bot, Loader2, Copy, CopyCheck } from "lucide-react"
 import { apiService, type Model, type Company } from "@/lib/api"
 import { toast } from "sonner"
 import { ErrorBoundary } from "@/components/error-boundary"
+import ReactMarkdown from "react-markdown"
+import { markdownComponents } from "@/components/markdown-components"
+import { extractCleanText } from "@/lib/utils"
 
 export default function UserPage() {
   const [selectedCompany, setSelectedCompany] = useState("")
@@ -32,6 +35,7 @@ export default function UserPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isQuerying, setIsQuerying] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
 
   // Load companies and models on component mount
   useEffect(() => {
@@ -247,6 +251,18 @@ export default function UserPage() {
     setCurrentChatMessages([])
   }
 
+  const handleCopy = async (text: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedMessageId(messageId)
+      toast.success("Response copied to clipboard!")
+      setTimeout(() => setCopiedMessageId(null), 2000) // Reset after 2 seconds
+    } catch (err) {
+      console.error("Failed to copy text: ", err)
+      toast.error("Failed to copy response")
+    }
+  }
+
   return (
     <ErrorBoundary>
       <AppLayout selectedValues={{
@@ -256,7 +272,7 @@ export default function UserPage() {
       }}>
         <div className="h-[calc(100vh-4rem)]">
         {/* Main Chat Area */}
-        <div className="h-full bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
+        <div className="h-full bg-gradient-to-br from-gray-50 to-white rounded-lg shadow-lg border border-gray-200 flex flex-col overflow-hidden">
           {/* Chat Header */}
           <div className="p-4 border-b border-gray-200">
             <h1 className="text-xl font-semibold text-gray-900">Manual Assistant</h1>
@@ -275,22 +291,52 @@ export default function UserPage() {
           </div>
 
           {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-5xl mx-auto space-y-6">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="max-w-6xl mx-auto space-y-6">
               {currentChatMessages.map((message, index) => (
                 <div key={index} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`flex items-start space-x-3 max-w-3xl ${message.type === "user" ? "flex-row-reverse space-x-reverse" : ""}`}
+                    className={`flex items-end space-x-3 w-full ${message.type === "user" ? "flex-row-reverse space-x-reverse" : ""}`}
                   >
                     <div
-                      className={`p-2 rounded-full ${message.type === "user" ? "bg-black text-white" : "bg-gray-100 text-gray-700"}`}
+                      className={`p-2 rounded-full flex-shrink-0 ${message.type === "user" ? "bg-black text-white" : "bg-gray-100 text-gray-700"}`}
                     >
                       {message.type === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                     </div>
-                    <div
-                      className={`p-4 rounded-lg ${message.type === "user" ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}
-                    >
-                      <p className="text-sm leading-relaxed">{message.message}</p>
+                    <div className={`flex flex-col ${message.type === "user" ? "max-w-[70%]" : "max-w-[90%]"} min-w-0`}>
+                      <div
+                        className={`p-4 md:p-6 rounded-lg shadow-sm ${message.type === "user" ? "bg-black text-white" : "bg-white text-gray-900 border border-gray-200"}`}
+                      >
+                        {message.type === "user" ? (
+                          <p className="text-sm leading-relaxed">{message.message}</p>
+                        ) : (
+                          <div className="space-y-4">
+                            <ReactMarkdown components={markdownComponents}>
+                              {message.message}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                      {message.type === "bot" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 self-end text-xs bg-white hover:bg-gray-50 border-gray-300 shadow-sm"
+                          onClick={() => handleCopy(extractCleanText(message.message), `message-${index}`)}
+                        >
+                          {copiedMessageId === `message-${index}` ? (
+                            <>
+                              <CopyCheck className="w-3 h-3 mr-1" />
+                              Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 mr-1" />
+                              Copy
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -298,8 +344,8 @@ export default function UserPage() {
             </div>
           </div>
 
-          <div className="p-4 border-t border-gray-200">
-            <div className="max-w-5xl mx-auto">
+          <div className="p-4 md:p-6 border-t border-gray-200 bg-white">
+            <div className="max-w-6xl mx-auto">
               {/* Query Input */}
               <form onSubmit={handleSendQuery} className="flex gap-2 mb-4">
                 <Textarea
@@ -310,8 +356,8 @@ export default function UserPage() {
                     models.length === 0 ? "No manuals available. Please upload a PDF first." :
                     "Ask a question about your manual..."
                   }
-                  className="flex-1 border-gray-300 focus:border-black focus:ring-black resize-none min-h-[50px]"
-                  rows={2}
+                  className="flex-1 border-gray-300 focus:border-black focus:ring-black resize-none min-h-[60px] text-sm md:text-base"
+                  rows={3}
                   disabled={isLoading || models.length === 0}
                 />
                 <Button 
@@ -329,6 +375,16 @@ export default function UserPage() {
 
               {/* Action Buttons at Bottom */}
               <div className="flex gap-2 justify-center">
+                {currentChatMessages.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={startNewChat}
+                    className="flex items-center gap-2 border-gray-300 hover:bg-gray-50 bg-transparent"
+                  >
+                    <FileText className="h-4 w-4" />
+                    New Chat
+                  </Button>
+                )}
                 <Dialog open={showPdfDialog} onOpenChange={setShowPdfDialog}>
                   <DialogTrigger asChild>
                     <Button

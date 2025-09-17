@@ -218,7 +218,7 @@ async def upload_pdf(
                 if v is not None:
                     d.metadata[k] = v
 
-        # Create embeddings and store in Qdrant
+        # Create embeddings and store in Qdrant with improved batch handling
         try:
             embedding_model = NVIDIANIMEmbeddings()
             
@@ -231,17 +231,35 @@ async def upload_pdf(
             collections = qdrant_client.get_collections()
             collection_exists = any(col.name == 'learn_vector3' for col in collections.collections)
             
+            # Process documents in smaller batches to avoid timeout/memory issues
+            batch_size = 50  # Smaller batch size for better reliability
+            total_docs = len(split_docs)
+            print(f"📊 Processing {total_docs} document chunks in batches of {batch_size}")
+            
             if not collection_exists:
                 print("🆕 Creating new learn_vector3 collection...")
-                # Create collection for first time
+                # Create collection for first time with first batch
+                first_batch = split_docs[:batch_size]
                 vector_store = QdrantVectorStore.from_documents(
-                    documents=split_docs,
+                    documents=first_batch,
                     url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
                     api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
                     collection_name='learn_vector3',
                     embedding=embedding_model
                 )
-                print("✅ Documents stored in Qdrant successfully (new collection)")
+                print(f"✅ Created collection with first {len(first_batch)} documents")
+                
+                # Add remaining documents in batches
+                remaining_docs = split_docs[batch_size:]
+                if remaining_docs:
+                    for i in range(0, len(remaining_docs), batch_size):
+                        batch = remaining_docs[i:i + batch_size]
+                        try:
+                            vector_store.add_documents(batch)
+                            print(f"✅ Added batch {i//batch_size + 2}: {len(batch)} documents")
+                        except Exception as batch_err:
+                            print(f"⚠️  Batch {i//batch_size + 2} failed: {batch_err}")
+                            # Continue with next batch
             else:
                 print("📚 Adding documents to existing learn_vector3 collection...")
                 # Add to existing collection
@@ -252,9 +270,17 @@ async def upload_pdf(
                     embedding=embedding_model
                 )
                 
-                # Add new documents to existing collection
-                vector_store.add_documents(split_docs)
-                print("✅ Documents added to existing Qdrant collection successfully")
+                # Add documents in batches
+                for i in range(0, len(split_docs), batch_size):
+                    batch = split_docs[i:i + batch_size]
+                    try:
+                        vector_store.add_documents(batch)
+                        print(f"✅ Added batch {i//batch_size + 1}: {len(batch)} documents")
+                    except Exception as batch_err:
+                        print(f"⚠️  Batch {i//batch_size + 1} failed: {batch_err}")
+                        # Continue with next batch
+                
+            print("✅ All documents processed for Qdrant storage")
                 
         except Exception as qdrant_err:
             print(f"⚠️  Qdrant storage failed: {qdrant_err}")
@@ -282,6 +308,225 @@ async def upload_pdf(
                 "cloudinary_public_id": cloudinary_public_id,
             }
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload_multiple_pdfs/")
+async def upload_multiple_pdfs(
+    files: list[UploadFile] = File(...),
+    company_name: str = Form(...),
+    product_name: str | None = Form(None),
+    product_code: str | None = Form(None)
+):
+    """
+    Upload multiple PDF files at once with improved batch processing
+    """
+    try:
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+        
+        # Clear previous uploads
+        for old_file in UPLOAD_DIR.iterdir():
+            if old_file.is_file():
+                old_file.unlink()
+        uploaded_files.clear()
+        
+        # Determine product_name (fallback to product_code for backward compatibility)
+        resolved_product_name = product_name or product_code
+        if not resolved_product_name:
+            raise HTTPException(status_code=400, detail="product_name or product_code is required")
+        
+        results = []
+        all_split_docs = []
+        
+        # Process each file
+        for file in files:
+            try:
+                # Save uploaded file temporarily for processing
+                file_path = UPLOAD_DIR / file.filename
+                with file_path.open("wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                
+                # Upload to Cloudinary
+                try:
+                    cloudinary_result = upload_to_cloudinary(
+                        str(file_path), 
+                        public_id=f"{company_name}_{resolved_product_name}_{file.filename}"
+                    )
+                    cloudinary_uri = cloudinary_result["secure_url"]
+                    cloudinary_public_id = cloudinary_result["public_id"]
+                    print(f"✅ File uploaded to Cloudinary: {cloudinary_uri}")
+                except Exception as e:
+                    if file_path.exists():
+                        file_path.unlink()
+                    raise HTTPException(status_code=500, detail=f"Failed to upload {file.filename} to Cloudinary: {str(e)}")
+                
+                # Insert metadata record in MongoDB
+                try:
+                    if mongo_collection is None:
+                        raise HTTPException(status_code=500, detail="MongoDB connection not available")
+                    
+                    insert_doc = {
+                        "company_name": company_name,
+                        "product_name": resolved_product_name,
+                        "uri": cloudinary_uri,
+                        "cloudinary_public_id": cloudinary_public_id,
+                        "filename": file.filename,
+                    }
+                    insert_result = mongo_collection.insert_one(insert_doc)
+                    inserted_id = str(insert_result.inserted_id)
+                except Exception as db_err:
+                    raise HTTPException(status_code=500, detail=f"Database insert failed for {file.filename}: {db_err}")
+                
+                # Extract core PDF metadata
+                pdf_meta = {}
+                try:
+                    reader = PdfReader(str(file_path))
+                    info = reader.metadata or {}
+                    pdf_meta["producer"] = info.get("/Producer") or info.get("producer")
+                    pdf_meta["creator"] = info.get("/Creator") or info.get("creator")
+                    pdf_meta["creationdate"] = info.get("/CreationDate") or info.get("creationdate")
+                    pdf_meta["moddate"] = info.get("/ModDate") or info.get("moddate")
+                    pdf_meta["total_pages"] = len(reader.pages)
+                    pdf_meta["source"] = cloudinary_uri
+                except Exception:
+                    pdf_meta = {"source": cloudinary_uri}
+                
+                # Load PDF
+                loader = PyPDFLoader(file_path=str(file_path))
+                docs = loader.load()
+                
+                # Attach metadata
+                for d in docs:
+                    d.metadata = d.metadata or {}
+                    d.metadata["company_name"] = company_name
+                    d.metadata["product_name"] = resolved_product_name
+                    d.metadata["product_code"] = product_code
+                    d.metadata["source"] = cloudinary_uri
+                    d.metadata["db_id"] = inserted_id
+                    d.metadata["filename"] = file.filename
+                    # Merge core PDF metadata
+                    for k, v in pdf_meta.items():
+                        if v is not None:
+                            d.metadata[k] = v
+                
+                # Chunk documents
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=1000,
+                    chunk_overlap=500
+                )
+                split_docs = text_splitter.split_documents(documents=docs)
+                
+                # Add metadata to chunks
+                for d in split_docs:
+                    d.metadata = d.metadata or {}
+                    d.metadata["product_name"] = resolved_product_name
+                    d.metadata["filename"] = file.filename
+                    d.metadata["db_id"] = inserted_id
+                    d.metadata["company_name"] = company_name
+                    d.metadata["product_code"] = product_code
+                    d.metadata["source"] = cloudinary_uri
+                    # Preserve page metadata and core PDF metadata
+                    for k, v in pdf_meta.items():
+                        if v is not None:
+                            d.metadata[k] = v
+                
+                all_split_docs.extend(split_docs)
+                uploaded_files.append(file.filename)
+                
+                # Clean up local file
+                if file_path.exists():
+                    file_path.unlink()
+                
+                results.append({
+                    "filename": file.filename,
+                    "status": "success",
+                    "chunks": len(split_docs),
+                    "db_id": inserted_id,
+                    "cloudinary_uri": cloudinary_uri
+                })
+                
+            except Exception as file_err:
+                results.append({
+                    "filename": file.filename,
+                    "status": "error",
+                    "error": str(file_err)
+                })
+                # Clean up on error
+                if 'file_path' in locals() and file_path.exists():
+                    file_path.unlink()
+        
+        # Batch process all documents for Qdrant
+        if all_split_docs:
+            try:
+                embedding_model = NVIDIANIMEmbeddings()
+                
+                qdrant_client = QdrantClient(
+                    url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
+                    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
+                )
+                
+                collections = qdrant_client.get_collections()
+                collection_exists = any(col.name == 'learn_vector3' for col in collections.collections)
+                
+                batch_size = 50
+                total_docs = len(all_split_docs)
+                print(f"📊 Processing {total_docs} document chunks from {len(files)} files in batches of {batch_size}")
+                
+                if not collection_exists:
+                    print("🆕 Creating new learn_vector3 collection...")
+                    first_batch = all_split_docs[:batch_size]
+                    vector_store = QdrantVectorStore.from_documents(
+                        documents=first_batch,
+                        url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
+                        api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
+                        collection_name='learn_vector3',
+                        embedding=embedding_model
+                    )
+                    print(f"✅ Created collection with first {len(first_batch)} documents")
+                    
+                    remaining_docs = all_split_docs[batch_size:]
+                    if remaining_docs:
+                        for i in range(0, len(remaining_docs), batch_size):
+                            batch = remaining_docs[i:i + batch_size]
+                            try:
+                                vector_store.add_documents(batch)
+                                print(f"✅ Added batch {i//batch_size + 2}: {len(batch)} documents")
+                            except Exception as batch_err:
+                                print(f"⚠️  Batch {i//batch_size + 2} failed: {batch_err}")
+                else:
+                    print("📚 Adding documents to existing learn_vector3 collection...")
+                    vector_store = QdrantVectorStore.from_existing_collection(
+                        url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
+                        api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
+                        collection_name='learn_vector3',
+                        embedding=embedding_model
+                    )
+                    
+                    for i in range(0, len(all_split_docs), batch_size):
+                        batch = all_split_docs[i:i + batch_size]
+                        try:
+                            vector_store.add_documents(batch)
+                            print(f"✅ Added batch {i//batch_size + 1}: {len(batch)} documents")
+                        except Exception as batch_err:
+                            print(f"⚠️  Batch {i//batch_size + 1} failed: {batch_err}")
+                
+                print("✅ All documents processed for Qdrant storage")
+                
+            except Exception as qdrant_err:
+                print(f"⚠️  Qdrant storage failed: {qdrant_err}")
+        
+        # Update current company
+        global current_company_name
+        current_company_name = company_name
+        
+        return {
+            "message": f"Processed {len(files)} files",
+            "files": uploaded_files,
+            "results": results,
+            "total_chunks": len(all_split_docs)
+        }
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -486,3 +731,7 @@ async def delete_manual(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete operation failed: {str(e)}")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

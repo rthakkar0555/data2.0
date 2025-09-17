@@ -31,10 +31,30 @@ class NVIDIANIMEmbeddings(Embeddings):
             raise e
     
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """Embed multiple documents"""
+        """Embed multiple documents with batch processing"""
         embeddings = []
-        for text in texts:
-            embeddings.append(self.embed_query(text))
+        batch_size = 100  # Process in batches to avoid API limits
+        
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            try:
+                # Use batch API call for better performance
+                response = self.client.embeddings.create(
+                    model=self.model,
+                    input=batch_texts
+                )
+                batch_embeddings = [data.embedding for data in response.data]
+                embeddings.extend(batch_embeddings)
+            except Exception as e:
+                print(f"Batch embedding failed, falling back to individual processing: {e}")
+                # Fallback to individual processing if batch fails
+                for text in batch_texts:
+                    try:
+                        embeddings.append(self.embed_query(text))
+                    except Exception as individual_error:
+                        print(f"Error embedding individual text: {individual_error}")
+                        # Add zero vector as fallback
+                        embeddings.append([0.0] * 1024)  # Assuming 1024 dimensions
         return embeddings
     
     def _embed_query(self, text: str) -> List[float]:

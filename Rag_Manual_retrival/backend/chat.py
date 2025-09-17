@@ -15,22 +15,29 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# Initialize NVIDIA NIM client with error handling
-try:
-    client = OpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key="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"
-    )
-    # Test the client
-    client.chat.completions.create(
-        model="nvidia/llama-3.1-nemotron-70b-instruct",
-        messages=[{"role": "user", "content": "Test"}],
-        max_tokens=1
-    )
-    print("NVIDIA NIM client initialized successfully")
-except Exception as e:
-    print(f"NVIDIA NIM client initialization failed: {e}")
-    client = None
+# Initialize NVIDIA NIM client lazily
+client = None
+
+def get_nvidia_client():
+    """Get or initialize NVIDIA client lazily"""
+    global client
+    if client is None:
+        try:
+            client = OpenAI(
+                base_url="https://integrate.api.nvidia.com/v1",
+                api_key="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"
+            )
+            # Test the client
+            client.chat.completions.create(
+                model="nvidia/llama-3.1-nemotron-70b-instruct",
+                messages=[{"role": "user", "content": "Test"}],
+                max_tokens=1
+            )
+            print("NVIDIA NIM client initialized successfully")
+        except Exception as e:
+            print(f"NVIDIA NIM client initialization failed: {e}")
+            client = None
+    return client
 
 router = APIRouter()
 
@@ -49,10 +56,11 @@ async def health_check():
         )
         qdrant.get_collections()  # Test Qdrant connection
         
-        if client is None:
+        nvidia_client = get_nvidia_client()
+        if nvidia_client is None:
             raise Exception("NVIDIA NIM client not initialized")
         
-        client.chat.completions.create(
+        nvidia_client.chat.completions.create(
             model="nvidia/llama-3.1-nemotron-70b-instruct",
             messages=[{"role": "user", "content": "Test"}],
             max_tokens=1
@@ -194,10 +202,11 @@ async def process_query(request: QueryRequest):
         """
 
         # Get response from NVIDIA NIM
-        if client is None:
+        nvidia_client = get_nvidia_client()
+        if nvidia_client is None:
             raise HTTPException(status_code=500, detail="NVIDIA NIM client not initialized")
         
-        response = client.chat.completions.create(
+        response = nvidia_client.chat.completions.create(
             model="nvidia/llama-3.1-nemotron-70b-instruct",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
