@@ -221,14 +221,41 @@ async def upload_pdf(
         # Create embeddings and store in Qdrant
         try:
             embedding_model = NVIDIANIMEmbeddings()
-            QdrantVectorStore.from_documents(
-                documents=split_docs,
+            
+            # Check if collection exists and create/recreate if needed
+            qdrant_client = QdrantClient(
                 url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
-                collection_name='learn_vector3',
-                embedding=embedding_model
+                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
             )
-            print("✅ Documents stored in Qdrant successfully")
+            
+            collections = qdrant_client.get_collections()
+            collection_exists = any(col.name == 'learn_vector3' for col in collections.collections)
+            
+            if not collection_exists:
+                print("🆕 Creating new learn_vector3 collection...")
+                # Create collection for first time
+                vector_store = QdrantVectorStore.from_documents(
+                    documents=split_docs,
+                    url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
+                    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
+                    collection_name='learn_vector3',
+                    embedding=embedding_model
+                )
+                print("✅ Documents stored in Qdrant successfully (new collection)")
+            else:
+                print("📚 Adding documents to existing learn_vector3 collection...")
+                # Add to existing collection
+                vector_store = QdrantVectorStore.from_existing_collection(
+                    url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
+                    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
+                    collection_name='learn_vector3',
+                    embedding=embedding_model
+                )
+                
+                # Add new documents to existing collection
+                vector_store.add_documents(split_docs)
+                print("✅ Documents added to existing Qdrant collection successfully")
+                
         except Exception as qdrant_err:
             print(f"⚠️  Qdrant storage failed: {qdrant_err}")
             print("   Documents processed but not stored in vector database")
