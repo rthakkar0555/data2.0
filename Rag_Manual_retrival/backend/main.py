@@ -223,7 +223,8 @@ async def upload_pdf(
             embedding_model = NVIDIANIMEmbeddings()
             QdrantVectorStore.from_documents(
                 documents=split_docs,
-                url="http://localhost:6333",
+                url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
+                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
                 collection_name='learn_vector3',
                 embedding=embedding_model
             )
@@ -365,7 +366,10 @@ async def delete_manual(
         
         # Delete from Qdrant DB using metadata filter
         try:
-            qdrant_client = QdrantClient(url="http://localhost:6333")
+            qdrant_client = QdrantClient(
+                url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
+                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
+            )
             
             # Try multiple approaches to find and delete the points
             deletion_successful = False

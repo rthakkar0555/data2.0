@@ -86,7 +86,8 @@ MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/database
 # Optional
 MONGODB_DB=datquest
 MONGODB_COLLECTION=uploads
-QDRANT_URL=http://localhost:6333
+QDRANT_URL=https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333
+QDRANT_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM
 QDRANT_COLLECTION_NAME=learn_vector3
 ```
 
