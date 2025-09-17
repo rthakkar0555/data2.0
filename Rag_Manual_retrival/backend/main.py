@@ -12,6 +12,7 @@ from bson import ObjectId
 import os
 import shutil
 import chat
+import auth
 from pypdf import PdfReader
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -23,8 +24,9 @@ load_dotenv()
 
 app = FastAPI()
 
-# Include the router from chat.py
+# Include the routers
 app.include_router(chat.router)
+app.include_router(auth.router)
 
 # CORS setup
 app.add_middleware(

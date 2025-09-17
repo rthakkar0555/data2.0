@@ -6,21 +6,28 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Menu, X, Settings, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface SidebarProps {
   className?: string
+  selectedValues?: {
+    companyName?: string
+    productName?: string
+    productCode?: string
+  }
 }
 
-export function Sidebar({ className }: SidebarProps) {
+export function Sidebar({ className, selectedValues }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false)
   const pathname = usePathname()
+  const { isAdmin } = useAuth()
 
   const navigation = [
-    {
+    ...(isAdmin ? [{
       name: "Admin Panel",
       href: "/admin",
       icon: Settings,
-    },
+    }] : []),
     {
       name: "User Panel",
       href: "/user",
@@ -54,7 +61,7 @@ export function Sidebar({ className }: SidebarProps) {
             <h2 className="text-xl font-bold">Manual Base</h2>
           </div>
 
-          <nav className="flex-1 px-4 space-y-2">
+          <nav className="px-4 space-y-2">
             {navigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -76,6 +83,33 @@ export function Sidebar({ className }: SidebarProps) {
               )
             })}
           </nav>
+
+          {/* Selected Values Display */}
+          {selectedValues && (selectedValues.companyName || selectedValues.productName || selectedValues.productCode) && (
+            <div className="px-4 pb-4 border-t border-gray-700 mt-[12px] pt-[10px]">
+              <h3 className="text-sm font-semibold text-gray-300 mb-3">Selected Manual</h3>
+              <div className="space-y-2 text-xs">
+                {selectedValues.companyName && (
+                  <div className="bg-gray-800 rounded px-3 py-2">
+                    <div className="text-gray-400">Company:</div>
+                    <div className="text-white font-medium">{selectedValues.companyName}</div>
+                  </div>
+                )}
+                {selectedValues.productName && (
+                  <div className="bg-gray-800 rounded px-3 py-2">
+                    <div className="text-gray-400">Product:</div>
+                    <div className="text-white font-medium">{selectedValues.productName}</div>
+                  </div>
+                )}
+                {selectedValues.productCode && (
+                  <div className="bg-gray-800 rounded px-3 py-2">
+                    <div className="text-gray-400">Code:</div>
+                    <div className="text-white font-medium">{selectedValues.productCode}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -87,7 +87,7 @@ MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/database
 MONGODB_DB=datquest
 MONGODB_COLLECTION=uploads
 QDRANT_URL=http://localhost:6333
-QDRANT_COLLECTION_NAME=learn_vector2
+QDRANT_COLLECTION_NAME=learn_vector3
 ```
 
 ### MongoDB Setup

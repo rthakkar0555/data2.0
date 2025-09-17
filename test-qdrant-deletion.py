@@ -24,8 +24,8 @@ def test_qdrant_deletion():
         print(f"📊 Available collections: {[c.name for c in collections.collections]}")
         
         # Get collection info
-        collection_info = qdrant_client.get_collection("learn_vector2")
-        print(f"📊 Collection 'learn_vector2' has {collection_info.points_count} points")
+        collection_info = qdrant_client.get_collection("learn_vector3")
+        print(f"📊 Collection 'learn_vector3' has {collection_info.points_count} points")
         
     except Exception as e:
         print(f"❌ Failed to get collection info: {e}")
@@ -55,7 +55,7 @@ def test_qdrant_deletion():
             
             # Check if points were actually deleted
             try:
-                updated_collection_info = qdrant_client.get_collection("learn_vector2")
+                updated_collection_info = qdrant_client.get_collection("learn_vector3")
                 print(f"📊 Collection now has {updated_collection_info.points_count} points")
             except Exception as e:
                 print(f"⚠️  Could not verify point count: {e}")

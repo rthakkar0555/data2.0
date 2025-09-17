@@ -170,7 +170,11 @@ export default function AdminPage() {
 
   return (
     <ErrorBoundary>
-      <AppLayout>
+      <AppLayout selectedValues={{
+        companyName: companyName,
+        productName: productName,
+        productCode: productCode
+      }}>
         <div className="space-y-8">
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Admin Dashboard</h1>

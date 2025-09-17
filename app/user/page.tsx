@@ -249,7 +249,11 @@ export default function UserPage() {
 
   return (
     <ErrorBoundary>
-      <AppLayout>
+      <AppLayout selectedValues={{
+        companyName: selectedCompany,
+        productName: selectedProduct,
+        productCode: productCode
+      }}>
         <div className="h-[calc(100vh-4rem)]">
         {/* Main Chat Area */}
         <div className="h-full bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
