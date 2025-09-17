@@ -91,7 +91,7 @@ async def process_query(request: QueryRequest):
         qdrant_filter = None
         if company_name and product_code:
             # Use dict-based filter (LangChain → Qdrant payload filter)
-           qdrant_filter = models.Filter(
+            qdrant_filter = models.Filter(
                 must=[
                     models.FieldCondition(
                         key="metadata.company_name",
@@ -103,20 +103,62 @@ async def process_query(request: QueryRequest):
                     )
                 ]
             )
+        elif company_name:
+            # If only company_name is provided, filter by company only
+            qdrant_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="metadata.company_name",
+                        match=models.MatchValue(value=company_name)
+                    )
+                ]
+            )
 
-        # Perform search
+        # Perform search with filter first
         search_result = vector_db.similarity_search(query=query, k=5, filter=qdrant_filter)
-
+        
+        # If no results with filter, try with broader search but still within the same company
         if not search_result and qdrant_filter:
-            # fallback: retry without filter
-            logger.warning(f"\n\n\n\n\n\nNo results with filter, retrying without filter for query: {query}")
-            search_result = vector_db.similarity_search(query=query, k=5)
-
+            logger.warning(f"No results with specific filter, trying broader search within company: {company_name}")
+            # Try with just company filter if we had both company and product filters
+            if company_name and product_code:
+                company_only_filter = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="metadata.company_name",
+                            match=models.MatchValue(value=company_name)
+                        )
+                    ]
+                )
+                search_result = vector_db.similarity_search(query=query, k=5, filter=company_only_filter)
+            
+        # Only if still no results and we have a company filter, try without any filter
+        if not search_result and company_name:
+            logger.warning(f"No results found for company {company_name}, trying without filter")
+            search_result = vector_db.similarity_search(query=query, k=5, filter=None)
+            
         if not search_result:
             logger.warning(f"No relevant documents found for query: {query}")
             raise HTTPException(status_code=400, detail="No relevant information found in the uploaded documents.")
 
+        logger.info(f"Found {len(search_result)} search results")
         logger.debug(f"Search result: {search_result}")
+
+        # Additional filtering: If we have both company_name and product_code, 
+        # only include results that match both (to prevent cross-contamination)
+        if company_name and product_code:
+            filtered_results = []
+            for result in search_result:
+                result_company = result.metadata.get('company_name')
+                result_product = result.metadata.get('product_code')
+                if result_company == company_name and result_product == product_code:
+                    filtered_results.append(result)
+            
+            if filtered_results:
+                search_result = filtered_results
+                logger.info(f"Filtered to {len(search_result)} results matching both company and product")
+            else:
+                logger.warning(f"No results match both company '{company_name}' and product '{product_code}'")
 
         # Format context (include metadata for debugging)
         context = "\n\n\n".join([
@@ -130,18 +172,23 @@ async def process_query(request: QueryRequest):
             for result in search_result
         ])
         
+        logger.info(f"Context length: {len(context)} characters")
+        
         # System prompt
         SYSTEM_PROMPT = f"""
         Role: You are "Companion AI" — provide usage, troubleshooting, parts, and maintenance guidance strictly from the provided Context.
 
         Hard rules:
         - Answer ONLY using the information in the Context below. Do not add outside knowledge, guesses, or general guidance.
-        - If the requested information is not in Context, say exactly: "Not found in Context."
+        - If the requested information is not in Context, say exactly: "I couldn't find relevant information in the available manuals for your query."
         - Answer in English. Keep tone clear, empathetic, and concise.
         - For every fact or step derived from Context, append a citation: [src: page_label=<PAGE_LABEL> pdf_uri=<PDF_URI>].
         - Prioritize safety: warn before risky steps; include unplug/power-off where indicated by Context.
-        - if the question is not related about manual guidandce usage troubleshooting or maintenance then say i am cant help with that.
-        - if question is about troubleshooting or maintence then provide step by step guidance.
+        - If the question is not related to manual guidance, usage, troubleshooting or maintenance then say "I can't help with that. I only provide guidance related to manual usage, troubleshooting, and maintenance."
+        - If question is about troubleshooting or maintenance then provide step by step guidance.
+        - IMPORTANT: Only provide information that is directly relevant to the user's query. Do not include information about other products or manuals that are not related to the specific question asked.
+        - Focus on the most relevant information from the context that directly answers the user's question.
+        
         Context:
         {context}
         """
