@@ -17,7 +17,7 @@
 In the Vercel dashboard, go to Settings → Environment Variables and add:
 
 ```
-MONGODB_URI=mongodb+srv://rishi:rishi123@cluster0.1tfj3.mongodb.net/datquest
+MONGODB_URI=mongodb+srv://rishi:rishi123@cluster0.1tfj3.mongodb.net/
 MONGODB_DB=datquest
 MONGODB_COLLECTION=uploads
 SECRET_KEY=your-secret-key-change-in-production

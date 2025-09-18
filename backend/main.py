@@ -42,7 +42,7 @@ app.add_middleware(
 )
 
 # Ensure uploads directory exists
-UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
+UPLOAD_DIR = Path("/tmp/uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # -----------------------------

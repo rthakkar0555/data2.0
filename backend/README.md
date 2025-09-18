@@ -7,7 +7,7 @@ This FastAPI backend is configured for deployment on Vercel.
 Before deploying, make sure to set the following environment variables in your Vercel dashboard:
 
 ### MongoDB Configuration
-- `MONGODB_URI` - Your MongoDB connection string
+- `MONGODB_URI` - Your MongoDB connection string (e.g., mongodb+srv://user:pass@cluster.mongodb.net/)
 - `MONGODB_DB` - Your database name
 - `MONGODB_COLLECTION` - Your collection name
 
