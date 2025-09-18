@@ -10,13 +10,14 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Upload, FileText, Send, User, Bot, Loader2, Copy, CopyCheck } from "lucide-react"
+import { Search, Upload, FileText, Send, User, Bot, Loader2, Copy, CopyCheck, QrCode } from "lucide-react"
 import { apiService, type Model, type Company } from "@/lib/api"
 import { toast } from "sonner"
 import { ErrorBoundary } from "@/components/error-boundary"
 import ReactMarkdown from "react-markdown"
 import { markdownComponents } from "@/components/markdown-components"
 import { extractCleanText } from "@/lib/utils"
+import { QRScanner } from "@/components/qr-scanner"
 
 export default function UserPage() {
   const [selectedCompany, setSelectedCompany] = useState("")
@@ -29,6 +30,7 @@ export default function UserPage() {
   const [query, setQuery] = useState("")
   const [showPdfDialog, setShowPdfDialog] = useState(false)
   const [showUploadDialog, setShowUploadDialog] = useState(false)
+  const [showQRScanner, setShowQRScanner] = useState(false)
   const [currentChatMessages, setCurrentChatMessages] = useState<Array<{ type: "user" | "bot"; message: string }>>([])
   const [companies, setCompanies] = useState<string[]>([])
   const [models, setModels] = useState<Model[]>([])
@@ -263,6 +265,24 @@ export default function UserPage() {
     }
   }
 
+  const handleQRScanSuccess = (data: { company_name: string; product_name: string; product_code: string }) => {
+    console.log("QR scan successful:", data)
+    
+    // Set the scanned data
+    setSelectedCompany(data.company_name)
+    setSelectedProduct(data.product_name)
+    setProductCode(data.product_code)
+    
+    // Close the QR scanner dialog
+    setShowQRScanner(false)
+    
+    // Automatically open the Select PDF dialog with the scanned data
+    setShowPdfDialog(true)
+    
+    // Show success message
+    toast.success(`QR scanned: ${data.company_name} - ${data.product_name}. Select PDF dialog opened.`)
+  }
+
   return (
     <ErrorBoundary>
       <AppLayout selectedValues={{
@@ -305,7 +325,7 @@ export default function UserPage() {
                     </div>
                     <div className={`flex flex-col ${message.type === "user" ? "max-w-[70%]" : "max-w-[90%]"} min-w-0`}>
                       <div
-                        className={`p-4 md:p-6 rounded-lg shadow-sm ${message.type === "user" ? "bg-black text-white" : "bg-white text-gray-900 border border-gray-200"}`}
+                        className={`p-4 md:p-3 rounded-lg shadow-sm ${message.type === "user" ? "bg-black text-white" : "bg-white text-gray-900 border border-gray-200"}`}
                       >
                         {message.type === "user" ? (
                           <p className="text-sm leading-relaxed">{message.message}</p>
@@ -478,6 +498,15 @@ export default function UserPage() {
                   </DialogContent>
                 </Dialog>
 
+                <Button
+                  variant="outline"
+                  onClick={() => setShowQRScanner(true)}
+                  className="flex items-center gap-2 border-gray-300 hover:bg-gray-50 bg-transparent"
+                >
+                  <QrCode className="h-4 w-4" />
+                  QR Scan
+                </Button>
+
                 <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
                   <DialogTrigger asChild>
                     <Button
@@ -560,6 +589,13 @@ export default function UserPage() {
           </div>
         </div>
       </div>
+      
+      {/* QR Scanner Dialog */}
+      <QRScanner
+        isOpen={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        onScanSuccess={handleQRScanSuccess}
+      />
     </AppLayout>
     </ErrorBoundary>
   )

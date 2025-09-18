@@ -143,7 +143,7 @@ async def process_query(request: QueryRequest):
         # Only if still no results and we have a company filter, try without any filter
         if not search_result and company_name:
             logger.warning(f"No results found for company {company_name}, trying without filter")
-            search_result = vector_db.similarity_search(query=query, k=8, filter=None)
+            raise HTTPException(status_code=400, detail="No relevant information found in the uploaded documents.")
             
         if not search_result:
             logger.warning(f"No relevant documents found for query: {query}")

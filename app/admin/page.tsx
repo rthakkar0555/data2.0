@@ -10,10 +10,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { FileText, MessageSquare, BarChart3, Eye, Upload, Search, Edit, Trash2, Loader2 } from "lucide-react"
+import { FileText, MessageSquare, BarChart3, Eye, Upload, Search, Edit, Trash2, Loader2, QrCode } from "lucide-react"
 import { apiService, type Model, type Company } from "@/lib/api"
 import { toast } from "sonner"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { QRGenerator } from "@/components/qr-generator"
 
 export default function AdminPage() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -26,6 +27,7 @@ export default function AdminPage() {
   const [models, setModels] = useState<Model[]>([])
   const [selectedCompany, setSelectedCompany] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  const [showQRGenerator, setShowQRGenerator] = useState(false)
 
   // Load companies and models on component mount
   useEffect(() => {
@@ -168,6 +170,32 @@ export default function AdminPage() {
     }
   }
 
+  const handleGenerateQrForExisting = async () => {
+    try {
+      const response = await apiService.generateQrForExisting()
+      toast.success(response.message)
+      
+      // Refresh the data
+      const companiesData = await apiService.getCompanies()
+      setCompanies(companiesData.companies)
+      
+      // Load models for all companies
+      const allModels: Model[] = []
+      for (const company of companiesData.companies) {
+        try {
+          const modelsData = await apiService.getModelsForCompany(company)
+          allModels.push(...modelsData.models)
+        } catch (error) {
+          console.error(`Failed to load models for ${company}:`, error)
+        }
+      }
+      setModels(allModels)
+    } catch (error) {
+      console.error('QR generation failed:', error)
+      toast.error(error instanceof Error ? error.message : 'QR generation failed')
+    }
+  }
+
   return (
     <ErrorBoundary>
       <AppLayout selectedValues={{
@@ -292,20 +320,31 @@ export default function AdminPage() {
                   </label>
                 </div>
               </div>
-              <Button
-                type="submit"
-                disabled={isUploading}
-                className="bg-black text-white hover:bg-gray-800 hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  'Upload Manual'
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  disabled={isUploading}
+                  className="bg-black text-white hover:bg-gray-800 hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    'Upload Manual'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setShowQRGenerator(true)}
+                  variant="outline"
+                  className="border-gray-300 hover:bg-gray-50"
+                >
+                  <QrCode className="mr-2 h-4 w-4" />
+                  Generate QR Code
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>
@@ -334,7 +373,7 @@ export default function AdminPage() {
                   <TableHead>Product Name</TableHead>
                   <TableHead>Product Code</TableHead>
                   <TableHead>Upload Date</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>QR Code</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -360,9 +399,21 @@ export default function AdminPage() {
                       <TableCell>{model.filename}</TableCell>
                       <TableCell>{new Date().toLocaleDateString()}</TableCell>
                       <TableCell>
-                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                          Active
-                        </span>
+                        {model.qr_uri ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="hover:bg-blue-50 hover:text-blue-600"
+                            onClick={() => window.open(model.qr_uri, '_blank')}
+                          >
+                            <QrCode className="h-4 w-4 mr-1" />
+                            View QR
+                          </Button>
+                        ) : (
+                          <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
+                            No QR
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
@@ -389,12 +440,19 @@ export default function AdminPage() {
 
         {/* Quick Actions */}
         <div className="flex flex-wrap gap-4">
+          {/* <Button 
+            onClick={handleGenerateQrForExisting}
+            className="bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 transition-transform"
+          >
+            <QrCode className="mr-2 h-4 w-4" />
+            Generate QR for Existing
+          </Button> */}
           <Dialog>
             <DialogTrigger asChild>
-              <Button className="bg-white text-black hover:bg-gray-100 hover:scale-105 transition-transform">
+              {/* <Button className="bg-white text-black hover:bg-gray-100 hover:scale-105 transition-transform">
                 <Eye className="mr-2 h-4 w-4" />
                 View User Queries Log
-              </Button>
+              </Button> */}
             </DialogTrigger>
             <DialogContent className="max-w-4xl bg-white text-black">
               <DialogHeader>
@@ -426,6 +484,12 @@ export default function AdminPage() {
           </Dialog>
         </div>
       </div>
+      
+      {/* QR Generator Dialog */}
+      <QRGenerator
+        isOpen={showQRGenerator}
+        onClose={() => setShowQRGenerator(false)}
+      />
     </AppLayout>
     </ErrorBoundary>
   )
