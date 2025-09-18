@@ -13,10 +13,10 @@ class NVIDIANIMEmbeddings(Embeddings):
     def __init__(self):
         super().__init__()
         self.client = OpenAI(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key="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"
+            base_url=os.getenv("NVIDIA_BASE_URL"),
+            api_key=os.getenv("NVIDIA_API_KEY")
         )
-        self.model = "nvidia/nv-embed-v1"
+        self.model = os.getenv("NVIDIA_EMBEDDING_MODEL")
     
     def embed_query(self, text: str) -> List[float]:
         """Embed a single query text"""

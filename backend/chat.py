@@ -26,12 +26,12 @@ def get_nvidia_client():
     if client is None:
         try:
             client = OpenAI(
-                base_url="https://integrate.api.nvidia.com/v1",
-                api_key="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"
+                base_url=os.getenv("NVIDIA_BASE_URL"),
+                api_key=os.getenv("NVIDIA_API_KEY")
             )
             # Test the client
             client.chat.completions.create(
-                model="nvidia/llama-3.1-nemotron-70b-instruct",
+                model=os.getenv("NVIDIA_CHAT_MODEL"),
                 messages=[{"role": "user", "content": "Test"}],
                 max_tokens=1
             )
@@ -62,8 +62,8 @@ async def health_check():
     try:
         from qdrant_client import QdrantClient
         qdrant = QdrantClient(
-            url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-            api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY")
         )
         qdrant.get_collections()  # Test Qdrant connection
         
@@ -72,7 +72,7 @@ async def health_check():
             raise Exception("NVIDIA NIM client not initialized")
         
         nvidia_client.chat.completions.create(
-            model="nvidia/llama-3.1-nemotron-70b-instruct",
+            model=os.getenv("NVIDIA_CHAT_MODEL"),
             messages=[{"role": "user", "content": "Test"}],
             max_tokens=1
         )  # Test NVIDIA NIM connection
@@ -96,9 +96,9 @@ async def process_query(request: QueryRequest):
         # Connect to Qdrant
         try:
             vector_db = QdrantVectorStore.from_existing_collection(
-                url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
-                collection_name="learn_vector3",
+                url=os.getenv("QDRANT_URL"),
+                api_key=os.getenv("QDRANT_API_KEY"),
+                collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                 embedding=embedding_model
             )
         except Exception as e:
@@ -297,7 +297,7 @@ async def process_query(request: QueryRequest):
             raise HTTPException(status_code=500, detail="NVIDIA NIM client not initialized")
         
         response = nvidia_client.chat.completions.create(
-            model="nvidia/llama-3.1-nemotron-70b-instruct",
+            model=os.getenv("NVIDIA_CHAT_MODEL"),
             messages=messages,
             temperature=0.5,
             top_p=1,

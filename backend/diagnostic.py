@@ -5,6 +5,7 @@ Diagnostic script to test the batch upload functionality
 
 import sys
 import traceback
+import os
 
 def test_imports():
     """Test all required imports"""
@@ -74,16 +75,16 @@ def test_qdrant_connection():
         from qdrant_client import QdrantClient
         
         qdrant_client = QdrantClient(
-            url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-            api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY")
         )
         
         collections = qdrant_client.get_collections()
         print(f"✅ Qdrant connection successful, found {len(collections.collections)} collections")
         
         # Check if our collection exists
-        collection_exists = any(col.name == 'learn_vector3' for col in collections.collections)
-        print(f"✅ Collection 'learn_vector3' exists: {collection_exists}")
+        collection_exists = any(col.name == os.getenv("QDRANT_COLLECTION_NAME") for col in collections.collections)
+        print(f"✅ Collection '{os.getenv('QDRANT_COLLECTION_NAME')}' exists: {collection_exists}")
         
         return True
         

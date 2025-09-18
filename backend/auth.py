@@ -10,7 +10,7 @@ import os
 from typing import Optional
 
 # Security setup
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -21,11 +21,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 # MongoDB setup
-MONGODB_URI = os.getenv(
-    "MONGODB_URI",
-    "mongodb+srv://rishi:rishi123@cluster0.1tfj3.mongodb.net/datquest"
-)
-MONGODB_DB = os.getenv("MONGODB_DB", "datquest")
+MONGODB_URI = os.getenv("MONGODB_URI")
+MONGODB_DB = os.getenv("MONGODB_DB")
 
 try:
     mongo_client = MongoClient(MONGODB_URI)
@@ -250,8 +247,8 @@ def create_default_admin():
         print("MongoDB not available, skipping admin creation")
         return
     
-    admin_email = "admin@manualbase.com"
-    admin_password = "admin123"
+    admin_email = os.getenv("DEFAULT_ADMIN_EMAIL")
+    admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD")
     
     existing_admin = get_user_by_email(admin_email)
     if not existing_admin:
