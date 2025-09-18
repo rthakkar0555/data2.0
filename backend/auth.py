@@ -25,7 +25,14 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 MONGODB_DB = os.getenv("MONGODB_DB")
 
 try:
-    mongo_client = MongoClient(MONGODB_URI)
+    mongo_client = MongoClient(
+        MONGODB_URI,
+        serverSelectionTimeoutMS=5000,  # 5 second timeout
+        connectTimeoutMS=10000,          # 10 second connection timeout
+        socketTimeoutMS=20000,           # 20 second socket timeout
+        maxPoolSize=10,                  # Limit connection pool size
+        retryWrites=True
+    )
     mongo_db = mongo_client[MONGODB_DB]
     users_collection = mongo_db["users"]
     # Test connection

@@ -23,6 +23,7 @@ import qrcode
 import json
 import io
 from PIL import Image
+from datetime import datetime
 
 load_dotenv()
 
@@ -42,7 +43,12 @@ app.add_middleware(
 )
 
 # Ensure uploads directory exists
-UPLOAD_DIR = Path("/tmp/uploads")
+# Use /tmp for Vercel deployment, local path for development
+import platform
+if platform.system() == "Windows":
+    UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
+else:
+    UPLOAD_DIR = Path("/tmp/uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # -----------------------------
@@ -53,7 +59,14 @@ MONGODB_DB = os.getenv("MONGODB_DB")
 MONGODB_COLLECTION = os.getenv("MONGODB_COLLECTION")
 
 try:
-    mongo_client = MongoClient(MONGODB_URI)
+    mongo_client = MongoClient(
+        MONGODB_URI,
+        serverSelectionTimeoutMS=5000,  # 5 second timeout
+        connectTimeoutMS=10000,          # 10 second connection timeout
+        socketTimeoutMS=20000,           # 20 second socket timeout
+        maxPoolSize=10,                  # Limit connection pool size
+        retryWrites=True
+    )
     mongo_db = mongo_client[MONGODB_DB]
     mongo_collection = mongo_db[MONGODB_COLLECTION]
     # Test connection
@@ -866,6 +879,69 @@ async def delete_manual(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete operation failed: {str(e)}")
+
+@app.get("/health/")
+async def health_check():
+    """Health check endpoint to verify all services are working"""
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "services": {}
+    }
+    
+    # Check MongoDB
+    try:
+        if mongo_client:
+            mongo_client.admin.command('ping')
+            health_status["services"]["mongodb"] = "connected"
+        else:
+            health_status["services"]["mongodb"] = "disconnected"
+    except Exception as e:
+        health_status["services"]["mongodb"] = f"error: {str(e)}"
+    
+    # Check Cloudinary
+    try:
+        cloudinary_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+        if cloudinary_name:
+            health_status["services"]["cloudinary"] = "configured"
+        else:
+            health_status["services"]["cloudinary"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["cloudinary"] = f"error: {str(e)}"
+    
+    # Check Qdrant
+    try:
+        qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_key = os.getenv("QDRANT_API_KEY")
+        if qdrant_url and qdrant_key:
+            health_status["services"]["qdrant"] = "configured"
+        else:
+            health_status["services"]["qdrant"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["qdrant"] = f"error: {str(e)}"
+    
+    # Check NVIDIA
+    try:
+        nvidia_key = os.getenv("NVIDIA_API_KEY")
+        nvidia_url = os.getenv("NVIDIA_BASE_URL")
+        if nvidia_key and nvidia_url:
+            health_status["services"]["nvidia"] = "configured"
+        else:
+            health_status["services"]["nvidia"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["nvidia"] = f"error: {str(e)}"
+    
+    # Check JWT
+    try:
+        secret_key = os.getenv("SECRET_KEY")
+        if secret_key:
+            health_status["services"]["jwt"] = "configured"
+        else:
+            health_status["services"]["jwt"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["jwt"] = f"error: {str(e)}"
+    
+    return health_status
 
 if __name__ == "__main__":
     import uvicorn
