@@ -58,6 +58,10 @@ export interface DeleteResponse {
   product_code: string;
 }
 
+export interface ClearConversationResponse {
+  message: string;
+}
+
 class ApiService {
   private baseUrl: string;
 
@@ -205,6 +209,11 @@ class ApiService {
       throw error;
     }
   }
+
+  // Clear conversation memory
+  async clearConversation(): Promise<ClearConversationResponse> {
+    return this.request<ClearConversationResponse>('/conversation/clear/');
+  }
 }
 
 // Create a singleton instance
@@ -222,4 +231,5 @@ export const {
   removeFile,
   generateQrForExisting,
   deleteManual,
+  clearConversation,
 } = apiService;

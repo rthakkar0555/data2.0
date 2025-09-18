@@ -6,6 +6,8 @@ from qdrant_client.http import models
 from langchain_openai import OpenAIEmbeddings
 from nvidia_embeddings import NVIDIANIMEmbeddings
 from langchain_qdrant import QdrantVectorStore
+from langchain.memory import ConversationBufferMemory
+from langchain.schema import BaseMessage, HumanMessage, AIMessage
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -41,10 +43,19 @@ def get_nvidia_client():
 
 router = APIRouter()
 
+# Global conversation memory storage for single user
+# This will be expanded to support multiple users later
+conversation_memory = ConversationBufferMemory(
+    memory_key="chat_history",
+    return_messages=True,
+    output_key="output"
+)
+
 class QueryRequest(BaseModel):
     query: str
     company_name: str | None = None
     product_code: str | None = None
+    user_id: str | None = "default_user"  # For future multi-user support
 
 @router.get("/health/")
 async def health_check():
@@ -76,7 +87,8 @@ async def process_query(request: QueryRequest):
         query = request.query
         company_name = request.company_name
         product_code = request.product_code
-        logger.info(f"\n\n\n\ncompany_name: {company_name}, product_code: {product_code}\n\n\n\n")
+        user_id = request.user_id or "default_user"
+        logger.info(f"\n\n\n\ncompany_name: {company_name}, product_code: {product_code}, user_id: {user_id}\n\n\n\n")
 
         # Embedding
         embedding_model = NVIDIANIMEmbeddings()
@@ -261,6 +273,24 @@ async def process_query(request: QueryRequest):
         {context}
         """
 
+        # Get conversation history from memory
+        chat_history = conversation_memory.chat_memory.messages
+        
+        # Prepare messages for LLM including conversation history
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        # Add conversation history
+        for message in chat_history:
+            if isinstance(message, HumanMessage):
+                messages.append({"role": "user", "content": message.content})
+            elif isinstance(message, AIMessage):
+                messages.append({"role": "assistant", "content": message.content})
+        
+        # Add current user query
+        messages.append({"role": "user", "content": query})
+        
+        logger.info(f"Total messages in conversation: {len(messages)}")
+        
         # Get response from NVIDIA NIM
         nvidia_client = get_nvidia_client()
         if nvidia_client is None:
@@ -268,10 +298,7 @@ async def process_query(request: QueryRequest):
         
         response = nvidia_client.chat.completions.create(
             model="nvidia/llama-3.1-nemotron-70b-instruct",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": query}
-            ],
+            messages=messages,
             temperature=0.5,
             top_p=1,
             max_tokens=1024
@@ -290,8 +317,46 @@ async def process_query(request: QueryRequest):
             
             ai_response += pdf_links_section
 
+        # Save conversation to memory
+        conversation_memory.chat_memory.add_user_message(query)
+        conversation_memory.chat_memory.add_ai_message(ai_response)
+        
+        logger.info(f"Conversation saved to memory. Total messages: {len(conversation_memory.chat_memory.messages)}")
+
         return {"response": ai_response}
 
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/conversation/clear/")
+async def clear_conversation():
+    """Clear the conversation memory"""
+    try:
+        conversation_memory.clear()
+        logger.info("Conversation memory cleared")
+        return {"message": "Conversation memory cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing conversation memory: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/conversation/history/")
+async def get_conversation_history():
+    """Get the current conversation history"""
+    try:
+        messages = conversation_memory.chat_memory.messages
+        conversation_data = []
+        
+        for message in messages:
+            if isinstance(message, HumanMessage):
+                conversation_data.append({"role": "user", "content": message.content})
+            elif isinstance(message, AIMessage):
+                conversation_data.append({"role": "assistant", "content": message.content})
+        
+        return {
+            "total_messages": len(messages),
+            "conversation": conversation_data
+        }
+    except Exception as e:
+        logger.error(f"Error getting conversation history: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -249,8 +249,23 @@ export default function UserPage() {
     }
   }
 
-  const startNewChat = () => {
-    setCurrentChatMessages([])
+  const startNewChat = async () => {
+    try {
+      // Clear conversation memory on the backend
+      await apiService.clearConversation()
+      
+      // Clear local chat messages
+      setCurrentChatMessages([])
+      
+      // Show success message
+      toast.success("New chat session started successfully!")
+    } catch (error) {
+      console.error("Failed to start new chat:", error)
+      toast.error("Failed to start new chat session. Please try again.")
+      
+      // Still clear local messages even if API call fails
+      setCurrentChatMessages([])
+    }
   }
 
   const handleCopy = async (text: string, messageId: string) => {
