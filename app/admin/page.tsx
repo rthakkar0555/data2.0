@@ -427,19 +427,19 @@ export default function AdminPage() {
 
         {/* Quick Actions */}
         <div className="flex flex-wrap gap-4">
-          <Button 
+          {/* <Button 
             onClick={handleGenerateQrForExisting}
             className="bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 transition-transform"
           >
             <QrCode className="mr-2 h-4 w-4" />
             Generate QR for Existing
-          </Button>
+          </Button> */}
           <Dialog>
             <DialogTrigger asChild>
-              <Button className="bg-white text-black hover:bg-gray-100 hover:scale-105 transition-transform">
+              {/* <Button className="bg-white text-black hover:bg-gray-100 hover:scale-105 transition-transform">
                 <Eye className="mr-2 h-4 w-4" />
                 View User Queries Log
-              </Button>
+              </Button> */}
             </DialogTrigger>
             <DialogContent className="max-w-4xl bg-white text-black">
               <DialogHeader>

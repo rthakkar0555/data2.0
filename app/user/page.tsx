@@ -305,7 +305,7 @@ export default function UserPage() {
                     </div>
                     <div className={`flex flex-col ${message.type === "user" ? "max-w-[70%]" : "max-w-[90%]"} min-w-0`}>
                       <div
-                        className={`p-4 md:p-6 rounded-lg shadow-sm ${message.type === "user" ? "bg-black text-white" : "bg-white text-gray-900 border border-gray-200"}`}
+                        className={`p-4 md:p-3 rounded-lg shadow-sm ${message.type === "user" ? "bg-black text-white" : "bg-white text-gray-900 border border-gray-200"}`}
                       >
                         {message.type === "user" ? (
                           <p className="text-sm leading-relaxed">{message.message}</p>
