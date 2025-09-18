@@ -9,12 +9,32 @@ interface AppLayoutProps {
     productName?: string
     productCode?: string
   }
+  onSelectPDF?: () => void
+  onQRScan?: () => void
+  onUploadPDF?: () => void
+  onNewChat?: () => void
+  showNewChatButton?: boolean
 }
 
-export function AppLayout({ children, selectedValues }: AppLayoutProps) {
+export function AppLayout({ 
+  children, 
+  selectedValues, 
+  onSelectPDF, 
+  onQRScan, 
+  onUploadPDF, 
+  onNewChat, 
+  showNewChatButton 
+}: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-black">
-      <Sidebar selectedValues={selectedValues} />
+      <Sidebar 
+        selectedValues={selectedValues} 
+        onSelectPDF={onSelectPDF}
+        onQRScan={onQRScan}
+        onUploadPDF={onUploadPDF}
+        onNewChat={onNewChat}
+        showNewChatButton={showNewChatButton}
+      />
       <div className="md:ml-64">
         <Header />
         <main className="p-6">{children}</main>

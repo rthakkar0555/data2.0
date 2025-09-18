@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Menu, X, Settings, Users } from "lucide-react"
+import { Menu, X, Settings, Users, Search, Upload, QrCode, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -15,9 +15,22 @@ interface SidebarProps {
     productName?: string
     productCode?: string
   }
+  onSelectPDF?: () => void
+  onQRScan?: () => void
+  onUploadPDF?: () => void
+  onNewChat?: () => void
+  showNewChatButton?: boolean
 }
 
-export function Sidebar({ className, selectedValues }: SidebarProps) {
+export function Sidebar({ 
+  className, 
+  selectedValues, 
+  onSelectPDF, 
+  onQRScan, 
+  onUploadPDF, 
+  onNewChat, 
+  showNewChatButton 
+}: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false)
   const pathname = usePathname()
   const { isAdmin } = useAuth()
@@ -28,11 +41,11 @@ export function Sidebar({ className, selectedValues }: SidebarProps) {
       href: "/admin",
       icon: Settings,
     }] : []),
-    {
+    ...(!isAdmin ? [{
       name: "User Panel",
       href: "/user",
       icon: Users,
-    },
+    }] : []),
   ]
 
   return (
@@ -84,30 +97,79 @@ export function Sidebar({ className, selectedValues }: SidebarProps) {
             })}
           </nav>
 
-          {/* Selected Values Display */}
-          {selectedValues && (selectedValues.companyName || selectedValues.productName || selectedValues.productCode) && (
-            <div className="px-4 pb-4 border-t border-gray-700 mt-[12px] pt-[10px]">
+          {/* Action Buttons */}
+          <div className="px-4 py-4 border-t border-gray-700">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">Actions</h3>
+            <div className="space-y-2">
+              {showNewChatButton && onNewChat && (
+                <Button
+                  onClick={onNewChat}
+                  className="w-full justify-start bg-gray-800 text-white hover:bg-gray-700 border border-gray-600"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  New Chat
+                </Button>
+              )}
+              {onSelectPDF && (
+                <Button
+                  onClick={onSelectPDF}
+                  className="w-full justify-start bg-gray-800 text-white hover:bg-gray-700 border border-gray-600"
+                >
+                  <Search className="h-4 w-4 mr-2" />
+                  Select PDF
+                </Button>
+              )}
+              {onQRScan && (
+                <Button
+                  onClick={onQRScan}
+                  className="w-full justify-start bg-gray-800 text-white hover:bg-gray-700 border border-gray-600"
+                >
+                  <QrCode className="h-4 w-4 mr-2" />
+                  QR Scan
+                </Button>
+              )}
+              {onUploadPDF && (
+                <Button
+                  onClick={onUploadPDF}
+                  className="w-full justify-start bg-gray-800 text-white hover:bg-gray-700 border border-gray-600"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload PDF
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Selected Values Display - Only show for non-admin users */}
+          {!isAdmin && (
+            <div className="px-4 pb-4 border-t border-gray-700 pt-4 mt-auto">
               <h3 className="text-sm font-semibold text-gray-300 mb-3">Selected Manual</h3>
-              <div className="space-y-2 text-xs">
-                {selectedValues.companyName && (
-                  <div className="bg-gray-800 rounded px-3 py-2">
-                    <div className="text-gray-400">Company:</div>
-                    <div className="text-white font-medium">{selectedValues.companyName}</div>
-                  </div>
-                )}
-                {selectedValues.productName && (
-                  <div className="bg-gray-800 rounded px-3 py-2">
-                    <div className="text-gray-400">Product:</div>
-                    <div className="text-white font-medium">{selectedValues.productName}</div>
-                  </div>
-                )}
-                {selectedValues.productCode && (
-                  <div className="bg-gray-800 rounded px-3 py-2">
-                    <div className="text-gray-400">Code:</div>
-                    <div className="text-white font-medium">{selectedValues.productCode}</div>
-                  </div>
-                )}
-              </div>
+              {selectedValues && (selectedValues.companyName || selectedValues.productName || selectedValues.productCode) ? (
+                <div className="space-y-2 text-xs">
+                  {selectedValues.companyName && (
+                    <div className="bg-green-900 border border-green-700 rounded px-3 py-2">
+                      <div className="text-green-300">Company:</div>
+                      <div className="text-white font-medium">{selectedValues.companyName}</div>
+                    </div>
+                  )}
+                  {selectedValues.productName && (
+                    <div className="bg-green-900 border border-green-700 rounded px-3 py-2">
+                      <div className="text-green-300">Product:</div>
+                      <div className="text-white font-medium">{selectedValues.productName}</div>
+                    </div>
+                  )}
+                  {selectedValues.productCode && (
+                    <div className="bg-green-900 border border-green-700 rounded px-3 py-2">
+                      <div className="text-green-300">Code:</div>
+                      <div className="text-white font-medium">{selectedValues.productCode}</div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-gray-500 text-xs italic">
+                  No manual selected
+                </div>
+              )}
             </div>
           )}
         </div>

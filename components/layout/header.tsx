@@ -14,7 +14,7 @@ export function Header() {
 
   return (
     <header className="h-16 bg-black text-white border-b border-gray-800 flex items-center justify-between px-6">
-      <h1 className="text-xl font-bold">Manual Base Retrieval System</h1>
+      <h1 className="text-xl font-bold">Companion AI User Guide & Maintenance Bot</h1>
 
       <div className="flex items-center space-x-4">
         <Avatar className="h-8 w-8 bg-white text-black">

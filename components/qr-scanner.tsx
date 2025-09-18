@@ -170,9 +170,7 @@ export function QRScanner({ isOpen, onClose, onScanSuccess }: QRScannerProps) {
                 <p className="text-sm text-gray-600 mb-4">
                   Scan a QR code containing product information
                 </p>
-                <p className="text-xs text-gray-500 mb-4">
-                  Expected format: {"{"}"company_name": "Company", "product_name": "Product", "product_code": "code.pdf"{"}"}
-                </p>
+              
                 <Button 
                   onClick={startScanning}
                   className="w-full bg-black text-white hover:bg-gray-800"
@@ -180,20 +178,20 @@ export function QRScanner({ isOpen, onClose, onScanSuccess }: QRScannerProps) {
                   Start Camera
                 </Button>
                 <div className="space-y-2">
-                  <Button 
+                  {/* <Button 
                     onClick={simulateQRScan}
                     variant="outline"
                     className="w-full border-gray-300 hover:bg-gray-50"
                   >
                     Simulate Scan (Test)
-                  </Button>
-                  <Button 
+                  </Button> */}
+                  {/* <Button 
                     onClick={() => setDebugMode(!debugMode)}
                     variant="outline"
                     className="w-full border-gray-300 hover:bg-gray-50"
                   >
                     {debugMode ? 'Hide Debug' : 'Show Debug'}
-                  </Button>
+                  </Button> */}
                 </div>
               </div>
             </div>

@@ -285,17 +285,23 @@ export default function UserPage() {
 
   return (
     <ErrorBoundary>
-      <AppLayout selectedValues={{
-        companyName: selectedCompany,
-        productName: selectedProduct,
-        productCode: productCode
-      }}>
+      <AppLayout 
+        selectedValues={{
+          companyName: selectedCompany,
+          productName: selectedProduct,
+          productCode: productCode
+        }}
+        onSelectPDF={() => setShowPdfDialog(true)}
+        onQRScan={() => setShowQRScanner(true)}
+        onUploadPDF={() => setShowUploadDialog(true)}
+        onNewChat={startNewChat}
+        showNewChatButton={currentChatMessages.length > 0}
+      >
         <div className="h-[calc(100vh-4rem)]">
         {/* Main Chat Area */}
         <div className="h-full bg-gradient-to-br from-gray-50 to-white rounded-lg shadow-lg border border-gray-200 flex flex-col overflow-hidden">
           {/* Chat Header */}
           <div className="p-4 border-b border-gray-200">
-            <h1 className="text-xl font-semibold text-gray-900">Manual Assistant</h1>
             <p className="text-sm text-gray-500">Ask questions about your manuals</p>
             <div className="mt-2 flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${
@@ -376,7 +382,7 @@ export default function UserPage() {
                     models.length === 0 ? "No manuals available. Please upload a PDF first." :
                     "Ask a question about your manual..."
                   }
-                  className="flex-1 border-gray-300 focus:border-black focus:ring-black resize-none min-h-[60px] text-sm md:text-base"
+                  className="flex-1 border-gray-300 focus:border-black focus:ring-black resize-none min-h-[40px] text-sm md:text-base"
                   rows={3}
                   disabled={isLoading || models.length === 0}
                 />
@@ -393,202 +399,164 @@ export default function UserPage() {
                 </Button>
               </form>
 
-              {/* Action Buttons at Bottom */}
-              <div className="flex gap-2 justify-center">
-                {currentChatMessages.length > 0 && (
-                  <Button
-                    variant="outline"
-                    onClick={startNewChat}
-                    className="flex items-center gap-2 border-gray-300 hover:bg-gray-50 bg-transparent"
-                  >
-                    <FileText className="h-4 w-4" />
-                    New Chat
-                  </Button>
-                )}
-                <Dialog open={showPdfDialog} onOpenChange={setShowPdfDialog}>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="flex items-center gap-2 border-gray-300 hover:bg-gray-50 bg-transparent"
-                    >
-                      <Search className="h-4 w-4" />
-                      Select PDF
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-md bg-white text-black">
-                    <DialogHeader>
-                      <DialogTitle>Select PDF Manual</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="company-select">Company Name</Label>
-                        <Select value={selectedCompany} onValueChange={handleCompanyChange} disabled={isLoading}>
-                          <SelectTrigger className="border-gray-300 focus:border-black focus:ring-black">
-                            <SelectValue placeholder={isLoading ? "Loading companies..." : "Select a company"} />
-                          </SelectTrigger>
-                          <SelectContent className="bg-white">
-                            {isLoading ? (
-                              <SelectItem value="loading" disabled>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Loading companies...
-                              </SelectItem>
-                            ) : companies.length === 0 ? (
-                              <SelectItem value="no-companies" disabled>
-                                No companies available
-                              </SelectItem>
-                            ) : (
-                              companies.map((company) => (
-                                <SelectItem key={company} value={company}>
-                                  {company}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="product-select">Product Name</Label>
-                        <Select value={selectedProduct} onValueChange={handleProductChange} disabled={!selectedCompany || isLoading}>
-                          <SelectTrigger className="border-gray-300 focus:border-black focus:ring-black">
-                            <SelectValue placeholder={
-                              isLoading ? "Loading..." : 
-                              selectedCompany ? "Select a product" : "Select a company first"
-                            } />
-                          </SelectTrigger>
-                          <SelectContent className="bg-white">
-                            {selectedCompany && (() => {
-                              const companyModels = models.filter(m => m.company_name === selectedCompany)
-                              console.log("Filtering products for company:", selectedCompany, "Models:", companyModels)
-                              return companyModels.length === 0 ? (
-                                <SelectItem value="no-products" disabled>
-                                  No products available for this company
-                                </SelectItem>
-                              ) : (
-                                companyModels.map((model) => (
-                                  <SelectItem key={model.product_name} value={model.product_name}>
-                                    {model.product_name}
-                                  </SelectItem>
-                                ))
-                              )
-                            })()}
-                            {!selectedCompany && (
-                              <SelectItem value="select-company-first" disabled>
-                                Please select a company first
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="product-code">Product Code (Optional)</Label>
-                        <Input
-                          id="product-code"
-                          value={productCode}
-                          onChange={(e) => setProductCode(e.target.value)}
-                          placeholder="Product code will auto-fill"
-                          className="border-gray-300 focus:border-black focus:ring-black"
-                          readOnly
-                        />
-                      </div>
-                      <Button onClick={handleRetrieveManual} className="w-full bg-black text-white hover:bg-gray-800">
-                        <FileText className="mr-2 h-4 w-4" />
-                        Load Manual
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                <Button
-                  variant="outline"
-                  onClick={() => setShowQRScanner(true)}
-                  className="flex items-center gap-2 border-gray-300 hover:bg-gray-50 bg-transparent"
-                >
-                  <QrCode className="h-4 w-4" />
-                  QR Scan
-                </Button>
-
-                <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="flex items-center gap-2 border-gray-300 hover:bg-gray-50 bg-transparent"
-                    >
-                      <Upload className="h-4 w-4" />
-                      Upload PDF
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-md bg-white text-black">
-                    <DialogHeader>
-                      <DialogTitle>Upload Your PDF Manual</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleUploadPdf} className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="upload-company-name">Company Name</Label>
-                        <Input
-                          id="upload-company-name"
-                          value={uploadCompanyName}
-                          onChange={(e) => setUploadCompanyName(e.target.value)}
-                          placeholder="Enter company name"
-                          className="border-gray-300 focus:border-black focus:ring-black"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="upload-file">PDF File</Label>
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-black transition-colors">
-                          <input
-                            id="upload-file"
-                            type="file"
-                            accept=".pdf"
-                            onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                            className="hidden"
-                          />
-                          <label htmlFor="upload-file" className="cursor-pointer">
-                            <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-                            <p className="text-sm text-gray-600">
-                              {uploadFile ? uploadFile.name : "Click to upload PDF"}
-                            </p>
-                          </label>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="upload-product-name">Product Name (Optional)</Label>
-                        <Input
-                          id="upload-product-name"
-                          value={uploadProductName}
-                          onChange={(e) => setUploadProductName(e.target.value)}
-                          placeholder="Enter product name"
-                          className="border-gray-300 focus:border-black focus:ring-black"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="upload-product-code">Product Code (Optional)</Label>
-                        <Input
-                          id="upload-product-code"
-                          value={uploadProductCode}
-                          onChange={(e) => setUploadProductCode(e.target.value)}
-                          placeholder="Enter product code"
-                          className="border-gray-300 focus:border-black focus:ring-black"
-                        />
-                      </div>
-                      <Button type="submit" disabled={isUploading} className="w-full bg-black text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed">
-                        {isUploading ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Uploading...
-                          </>
-                        ) : (
-                          'Upload and Process'
-                        )}
-                      </Button>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </div>
             </div>
           </div>
         </div>
       </div>
+      
+      {/* Dialogs */}
+      <Dialog open={showPdfDialog} onOpenChange={setShowPdfDialog}>
+        <DialogContent className="max-w-md bg-white text-black">
+          <DialogHeader>
+            <DialogTitle>Select PDF Manual</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="company-select">Company Name</Label>
+              <Select value={selectedCompany} onValueChange={handleCompanyChange} disabled={isLoading}>
+                <SelectTrigger className="border-gray-300 focus:border-black focus:ring-black">
+                  <SelectValue placeholder={isLoading ? "Loading companies..." : "Select a company"} />
+                </SelectTrigger>
+                <SelectContent className="bg-white">
+                  {isLoading ? (
+                    <SelectItem value="loading" disabled>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Loading companies...
+                    </SelectItem>
+                  ) : companies.length === 0 ? (
+                    <SelectItem value="no-companies" disabled>
+                      No companies available
+                    </SelectItem>
+                  ) : (
+                    companies.map((company) => (
+                      <SelectItem key={company} value={company}>
+                        {company}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="product-select">Product Name</Label>
+              <Select value={selectedProduct} onValueChange={handleProductChange} disabled={!selectedCompany || isLoading}>
+                <SelectTrigger className="border-gray-300 focus:border-black focus:ring-black">
+                  <SelectValue placeholder={
+                    isLoading ? "Loading..." : 
+                    selectedCompany ? "Select a product" : "Select a company first"
+                  } />
+                </SelectTrigger>
+                <SelectContent className="bg-white">
+                  {selectedCompany && (() => {
+                    const companyModels = models.filter(m => m.company_name === selectedCompany)
+                    console.log("Filtering products for company:", selectedCompany, "Models:", companyModels)
+                    return companyModels.length === 0 ? (
+                      <SelectItem value="no-products" disabled>
+                        No products available for this company
+                      </SelectItem>
+                    ) : (
+                      companyModels.map((model) => (
+                        <SelectItem key={model.product_name} value={model.product_name}>
+                          {model.product_name}
+                        </SelectItem>
+                      ))
+                    )
+                  })()}
+                  {!selectedCompany && (
+                    <SelectItem value="select-company-first" disabled>
+                      Please select a company first
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="product-code">Product Code (Optional)</Label>
+              <Input
+                id="product-code"
+                value={productCode}
+                onChange={(e) => setProductCode(e.target.value)}
+                placeholder="Product code will auto-fill"
+                className="border-gray-300 focus:border-black focus:ring-black"
+                readOnly
+              />
+            </div>
+            <Button onClick={handleRetrieveManual} className="w-full bg-black text-white hover:bg-gray-800">
+              <FileText className="mr-2 h-4 w-4" />
+              Load Manual
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent className="max-w-md bg-white text-black">
+          <DialogHeader>
+            <DialogTitle>Upload Your PDF Manual</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUploadPdf} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="upload-company-name">Company Name</Label>
+              <Input
+                id="upload-company-name"
+                value={uploadCompanyName}
+                onChange={(e) => setUploadCompanyName(e.target.value)}
+                placeholder="Enter company name"
+                className="border-gray-300 focus:border-black focus:ring-black"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="upload-file">PDF File</Label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-black transition-colors">
+                <input
+                  id="upload-file"
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  className="hidden"
+                />
+                <label htmlFor="upload-file" className="cursor-pointer">
+                  <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-600">
+                    {uploadFile ? uploadFile.name : "Click to upload PDF"}
+                  </p>
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="upload-product-name">Product Name (Optional)</Label>
+              <Input
+                id="upload-product-name"
+                value={uploadProductName}
+                onChange={(e) => setUploadProductName(e.target.value)}
+                placeholder="Enter product name"
+                className="border-gray-300 focus:border-black focus:ring-black"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="upload-product-code">Product Code (Optional)</Label>
+              <Input
+                id="upload-product-code"
+                value={uploadProductCode}
+                onChange={(e) => setUploadProductCode(e.target.value)}
+                placeholder="Enter product code"
+                className="border-gray-300 focus:border-black focus:ring-black"
+              />
+            </div>
+            <Button type="submit" disabled={isUploading} className="w-full bg-black text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed">
+              {isUploading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                'Upload and Process'
+              )}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
       
       {/* QR Scanner Dialog */}
       <QRScanner
