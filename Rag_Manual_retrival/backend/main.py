@@ -19,6 +19,10 @@ from qdrant_client.http import models
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+import qrcode
+import json
+import io
+from PIL import Image
 
 load_dotenv()
 
@@ -99,6 +103,57 @@ def delete_from_cloudinary(public_id: str) -> bool:
         print(f"Cloudinary deletion failed: {e}")
         return False
 
+def generate_qr_code(company_name: str, product_name: str, product_code: str = None) -> io.BytesIO:
+    """
+    Generate QR code with product information
+    """
+    try:
+        # Data to encode in QR code
+        data = {
+            "company_name": company_name,
+            "product_name": product_name,
+            "product_code": product_code or product_name,
+        }
+        
+        # Create QR code instance
+        qr = qrcode.QRCode(
+            version=1,  # Controls the size of the QR code (1 is the smallest)
+            error_correction=qrcode.constants.ERROR_CORRECT_L,  # Sets the error correction level
+            box_size=10,  # Size of each QR code pixel
+            border=4,  # Thickness of the border
+        )
+        
+        # Add data to the QR code
+        qr.add_data(json.dumps(data))
+        qr.make(fit=True)
+        
+        # Create an image from the QR code instance
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to BytesIO for upload
+        qr_buffer = io.BytesIO()
+        img.save(qr_buffer, format='PNG')
+        qr_buffer.seek(0)
+        
+        return qr_buffer
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"QR code generation failed: {str(e)}")
+
+def upload_qr_to_cloudinary(qr_buffer: io.BytesIO, public_id: str) -> dict:
+    """
+    Upload QR code to Cloudinary and return the upload result
+    """
+    try:
+        result = cloudinary.uploader.upload(
+            qr_buffer,
+            resource_type="image",  # For QR code images
+            public_id=public_id,
+            folder="qr_codes"  # Organize QR codes in a folder
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"QR code Cloudinary upload failed: {str(e)}")
+
 # Store list of uploaded files
 uploaded_files = []
 current_company_name: str | None = None
@@ -147,6 +202,19 @@ async def upload_pdf(
                 file_path.unlink()
             raise HTTPException(status_code=500, detail=f"Failed to upload to Cloudinary: {str(e)}")
 
+        # Generate and upload QR code
+        qr_uri = None
+        qr_public_id = None
+        try:
+            qr_buffer = generate_qr_code(company_name, resolved_product_name, product_code)
+            qr_public_id = f"{company_name}_{resolved_product_name}_qr"
+            qr_result = upload_qr_to_cloudinary(qr_buffer, qr_public_id)
+            qr_uri = qr_result["secure_url"]
+            print(f"✅ QR code generated and uploaded to Cloudinary: {qr_uri}")
+        except Exception as e:
+            print(f"⚠️  QR code generation/upload failed: {e}")
+            # Continue without QR code - the upload will still succeed
+
         # Insert metadata record in MongoDB
         try:
             if mongo_collection is None:
@@ -158,6 +226,8 @@ async def upload_pdf(
                 "uri": cloudinary_uri,
                 "cloudinary_public_id": cloudinary_public_id,
                 "filename": file.filename,
+                "qr_uri": qr_uri,
+                "qr_public_id": qr_public_id,
             }
             insert_result = mongo_collection.insert_one(insert_doc)
             inserted_id = str(insert_result.inserted_id)
@@ -306,6 +376,8 @@ async def upload_pdf(
                 "product_name": resolved_product_name,
                 "uri": cloudinary_uri,
                 "cloudinary_public_id": cloudinary_public_id,
+                "qr_uri": qr_uri,
+                "qr_public_id": qr_public_id,
             }
         }
     except Exception as e:
@@ -360,6 +432,19 @@ async def upload_multiple_pdfs(
                     if file_path.exists():
                         file_path.unlink()
                     raise HTTPException(status_code=500, detail=f"Failed to upload {file.filename} to Cloudinary: {str(e)}")
+
+                # Generate and upload QR code
+                qr_uri = None
+                qr_public_id = None
+                try:
+                    qr_buffer = generate_qr_code(company_name, resolved_product_name, product_code)
+                    qr_public_id = f"{company_name}_{resolved_product_name}_qr"
+                    qr_result = upload_qr_to_cloudinary(qr_buffer, qr_public_id)
+                    qr_uri = qr_result["secure_url"]
+                    print(f"✅ QR code generated and uploaded to Cloudinary: {qr_uri}")
+                except Exception as e:
+                    print(f"⚠️  QR code generation/upload failed for {file.filename}: {e}")
+                    # Continue without QR code - the upload will still succeed
                 
                 # Insert metadata record in MongoDB
                 try:
@@ -372,6 +457,8 @@ async def upload_multiple_pdfs(
                         "uri": cloudinary_uri,
                         "cloudinary_public_id": cloudinary_public_id,
                         "filename": file.filename,
+                        "qr_uri": qr_uri,
+                        "qr_public_id": qr_public_id,
                     }
                     insert_result = mongo_collection.insert_one(insert_doc)
                     inserted_id = str(insert_result.inserted_id)
@@ -443,7 +530,8 @@ async def upload_multiple_pdfs(
                     "status": "success",
                     "chunks": len(split_docs),
                     "db_id": inserted_id,
-                    "cloudinary_uri": cloudinary_uri
+                    "cloudinary_uri": cloudinary_uri,
+                    "qr_uri": qr_uri
                 })
                 
             except Exception as file_err:
@@ -586,11 +674,61 @@ async def list_models_for_company(company: str):
                 "product_name": doc.get("product_name"),
                 "filename": doc.get("filename"),
                 "uri": doc.get("uri"),
+                "qr_uri": doc.get("qr_uri"),
             })
         return {"models": models}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 1
+@app.post("/generate_qr_for_existing/")
+async def generate_qr_for_existing():
+    """
+    Generate QR codes for existing entries that don't have them
+    """
+    try:
+        if mongo_collection is None:
+            raise HTTPException(status_code=500, detail="MongoDB connection not available")
+        
+        # Find documents without QR codes
+        cursor = mongo_collection.find({"qr_uri": {"$exists": False}})
+        updated_count = 0
+        
+        for doc in cursor:
+            try:
+                company_name = doc.get("company_name")
+                product_name = doc.get("product_name")
+                filename = doc.get("filename")
+                
+                if not all([company_name, product_name]):
+                    continue
+                
+                # Generate QR code
+                qr_buffer = generate_qr_code(company_name, product_name, filename)
+                qr_public_id = f"{company_name}_{product_name}_qr"
+                qr_result = upload_qr_to_cloudinary(qr_buffer, qr_public_id)
+                qr_uri = qr_result["secure_url"]
+                
+                # Update document with QR code
+                mongo_collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"qr_uri": qr_uri, "qr_public_id": qr_public_id}}
+                )
+                
+                updated_count += 1
+                print(f"✅ Generated QR code for {company_name} - {product_name}: {qr_uri}")
+                
+            except Exception as e:
+                print(f"⚠️  Failed to generate QR for {doc.get('company_name')} - {doc.get('product_name')}: {e}")
+                continue
+        
+        return {
+            "message": f"Generated QR codes for {updated_count} existing entries",
+            "updated_count": updated_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"QR generation failed: {str(e)}")
+
 @app.delete("/delete_manual/")
 async def delete_manual(
     product_name: str = Form(...),

@@ -32,6 +32,7 @@ export interface Model {
   product_name: string;
   filename: string;
   uri: string;
+  qr_uri?: string;
 }
 
 export interface ModelsResponse {
@@ -172,6 +173,13 @@ class ApiService {
     });
   }
 
+  // Generate QR codes for existing entries
+  async generateQrForExisting(): Promise<{ message: string; updated_count: number }> {
+    return this.request<{ message: string; updated_count: number }>('/generate_qr_for_existing/', {
+      method: 'POST',
+    });
+  }
+
   // Delete manual from both MongoDB and Qdrant DB
   async deleteManual(productName: string, productCode: string): Promise<DeleteResponse> {
     const formData = new FormData();
@@ -212,5 +220,6 @@ export const {
   getModelsForCompany,
   getUploadedFiles,
   removeFile,
+  generateQrForExisting,
   deleteManual,
 } = apiService;
