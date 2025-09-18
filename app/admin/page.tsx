@@ -14,6 +14,7 @@ import { FileText, MessageSquare, BarChart3, Eye, Upload, Search, Edit, Trash2, 
 import { apiService, type Model, type Company } from "@/lib/api"
 import { toast } from "sonner"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { QRGenerator } from "@/components/qr-generator"
 
 export default function AdminPage() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -26,6 +27,7 @@ export default function AdminPage() {
   const [models, setModels] = useState<Model[]>([])
   const [selectedCompany, setSelectedCompany] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  const [showQRGenerator, setShowQRGenerator] = useState(false)
 
   // Load companies and models on component mount
   useEffect(() => {
@@ -318,20 +320,31 @@ export default function AdminPage() {
                   </label>
                 </div>
               </div>
-              <Button
-                type="submit"
-                disabled={isUploading}
-                className="bg-black text-white hover:bg-gray-800 hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  'Upload Manual'
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  disabled={isUploading}
+                  className="bg-black text-white hover:bg-gray-800 hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    'Upload Manual'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setShowQRGenerator(true)}
+                  variant="outline"
+                  className="border-gray-300 hover:bg-gray-50"
+                >
+                  <QrCode className="mr-2 h-4 w-4" />
+                  Generate QR Code
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>
@@ -471,6 +484,12 @@ export default function AdminPage() {
           </Dialog>
         </div>
       </div>
+      
+      {/* QR Generator Dialog */}
+      <QRGenerator
+        isOpen={showQRGenerator}
+        onClose={() => setShowQRGenerator(false)}
+      />
     </AppLayout>
     </ErrorBoundary>
   )
