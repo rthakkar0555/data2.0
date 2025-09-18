@@ -123,7 +123,7 @@ async def process_query(request: QueryRequest):
             )
 
         # Perform search with filter first
-        search_result = vector_db.similarity_search(query=query, k=5, filter=qdrant_filter)
+        search_result = vector_db.similarity_search(query=query, k=8, filter=qdrant_filter)
         
         # If no results with filter, try with broader search but still within the same company
         if not search_result and qdrant_filter:
@@ -138,12 +138,12 @@ async def process_query(request: QueryRequest):
                         )
                     ]
                 )
-                search_result = vector_db.similarity_search(query=query, k=5, filter=company_only_filter)
+                search_result = vector_db.similarity_search(query=query, k=8, filter=company_only_filter)
             
         # Only if still no results and we have a company filter, try without any filter
         if not search_result and company_name:
             logger.warning(f"No results found for company {company_name}, trying without filter")
-            search_result = vector_db.similarity_search(query=query, k=5, filter=None)
+            search_result = vector_db.similarity_search(query=query, k=8, filter=None)
             
         if not search_result:
             logger.warning(f"No relevant documents found for query: {query}")
@@ -182,6 +182,13 @@ async def process_query(request: QueryRequest):
         
         logger.info(f"Context length: {len(context)} characters")
         
+        # Collect unique PDF URLs from search results
+        pdf_urls = set()
+        for result in search_result:
+            source = result.metadata.get('source')
+            if source:
+                pdf_urls.add(source)
+        
         # System prompt
         SYSTEM_PROMPT = f"""
         Role: You are "Companion AI" — provide usage, troubleshooting, parts, and maintenance guidance strictly from the provided Context.
@@ -190,12 +197,48 @@ async def process_query(request: QueryRequest):
         - Answer ONLY using the information in the Context below. Do not add outside knowledge, guesses, or general guidance.
         - If the requested information is not in Context, say exactly: "I couldn't find relevant information in the available manuals for your query."
         - Answer in English. Keep tone clear, empathetic, and concise.
-        - For every fact or step derived from Context, append a citation: [src: page_label=<PAGE_LABEL> pdf_uri=<PDF_URI>].
+        - For every fact or step derived from Context, include the page label directly beside the information in parentheses: (Page X)
         - Prioritize safety: warn before risky steps; include unplug/power-off where indicated by Context.
         - If the question is not related to manual guidance, usage, troubleshooting or maintenance then say "I can't help with that. I only provide guidance related to manual usage, troubleshooting, and maintenance."
         - If question is about troubleshooting or maintenance then provide step by step guidance.
         - IMPORTANT: Only provide information that is directly relevant to the user's query. Do not include information about other products or manuals that are not related to the specific question asked.
-        - Focus on the most relevant information from the context that directly answers the user's question.
+        - Focus on the most relevant information from the context that directly answers the user's query.
+        - Do not search in web and do not provide any information that is not in the context.
+
+        CRITICAL FORMATTING REQUIREMENTS:
+        - Use proper Markdown structure with clear hierarchy
+        - Start with a main heading using # (single hash)
+        - Use ## for major sections, ### for subsections
+        - Use numbered lists (1., 2., 3.) for step-by-step instructions
+        - Use bullet points (- or *) for features, tips, or general information
+        - Use *bold text* for important warnings, key terms, or emphasis
+        - Use code blocks for technical terms, model numbers, or specific values
+        - Use > blockquotes for important safety warnings or notes
+        - Separate each step with a blank line for better readability
+        - Use horizontal rules (---) to separate major sections
+        - Ensure proper spacing between all elements
+        - IMPORTANT: Include page labels directly beside the information in parentheses: (Page X)
+        - DO NOT include a "Reference Documents" section in your response - this will be added automatically
+        - NEVER include PDF URLs inline with the content or at the end of your response
+
+        Example structure:
+        # Main Topic
+
+        ## Introduction
+        Brief overview paragraph (Page 1).
+
+        ## Step-by-Step Instructions
+        1. *First step* - Detailed description (Page 6)
+
+        2. *Second step* - Detailed description (Page 7)
+
+        3. *Third step* - Detailed description (Page 8)
+
+        ## Important Notes
+        - Important point 1 (Page 10)
+        - Important point 2 (Page 11)
+
+        > *Safety Warning*: Important safety information here (Page 5)
         
         Context:
         {context}
@@ -217,7 +260,20 @@ async def process_query(request: QueryRequest):
             max_tokens=1024
         )
 
-        return {"response": response.choices[0].message.content}
+        # Get the AI response
+        ai_response = response.choices[0].message.content
+        
+        # Append PDF URLs at the end if they exist and AI hasn't already added them
+        if pdf_urls and "## Reference Documents" not in ai_response:
+            pdf_links_section = "\n\n## Reference Documents\n"
+            for pdf_url in pdf_urls:
+                # Extract filename from URL for display
+                filename = pdf_url.split('/')[-1] if '/' in pdf_url else pdf_url
+                pdf_links_section += f"[{filename}]({pdf_url})\n\n"
+            
+            ai_response += pdf_links_section
+
+        return {"response": ai_response}
 
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}", exc_info=True)

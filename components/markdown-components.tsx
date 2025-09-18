@@ -16,11 +16,24 @@ export const markdownComponents = {
       {children}
     </h1>
   ),
-  h2: ({ className, children, ...props }: MdComponentProps) => (
-    <h2 className={cn("text-xl md:text-2xl font-bold mt-6 mb-4 text-gray-900 border-b border-gray-200 pb-2", className)} {...props}>
-      {children}
-    </h2>
-  ),
+  h2: ({ className, children, ...props }: MdComponentProps) => {
+    const content = children?.toString() || ""
+    
+    // Special styling for Reference Documents section
+    if (content.toLowerCase().includes('reference documents')) {
+      return (
+        <h2 className={cn("text-xl md:text-2xl font-bold mt-8 mb-4 text-gray-900 border-b-2 border-blue-300 pb-2 bg-blue-50 px-4 py-3 rounded-lg", className)} {...props}>
+          📚 {children}
+        </h2>
+      )
+    }
+    
+    return (
+      <h2 className={cn("text-xl md:text-2xl font-bold mt-6 mb-4 text-gray-900 border-b border-gray-200 pb-2", className)} {...props}>
+        {children}
+      </h2>
+    )
+  },
   h3: ({ className, children, ...props }: MdComponentProps) => (
     <h3 className={cn("text-lg md:text-xl font-bold mt-5 mb-3 text-gray-900", className)} {...props}>
       {children}
@@ -34,7 +47,7 @@ export const markdownComponents = {
   p: ({ className, children, ...props }: MdComponentProps) => {
     const content = children?.toString() || ""
     
-    // Check if this paragraph contains a citation
+    // Check if this paragraph contains a citation (old format)
     if (content.includes('[src:') && content.includes('pdf_uri=')) {
       return (
         <div className="my-5 p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
@@ -56,17 +69,35 @@ export const markdownComponents = {
       </p>
     )
   },
-  a: ({ className, children, href, ...props }: MdComponentProps) => (
-    <a
-      className={cn("text-blue-600 hover:text-blue-800 underline font-medium", className)}
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ className, children, href, ...props }: MdComponentProps) => {
+    const isPdfLink = href?.toLowerCase().includes('.pdf') || false
+    
+    if (isPdfLink) {
+      return (
+        <a
+          className={cn("inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm", className)}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          {...props}
+        >
+          📄 {children}
+        </a>
+      )
+    }
+    
+    return (
+      <a
+        className={cn("text-blue-600 hover:text-blue-800 underline font-medium", className)}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+      >
+        {children}
+      </a>
+    )
+  },
   ul: ({ className, children, ...props }: MdComponentProps) => (
     <ul className={cn("list-disc pl-6 mb-5 text-gray-700 space-y-2 text-sm md:text-base", className)} {...props}>
       {children}
