@@ -6,14 +6,14 @@ langchain-openai==0.2.2
 langchain-qdrant==0.1.4
 langchain-community==0.3.1
 python-dotenv==1.0.1
-openai==1.51.0
+openai==1.70.0
 pypdf==5.0.1
 qdrant-client==1.11.3
 pymongo==4.8.0
 cloudinary==1.41.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
 instructor==1.11.3
 qrcode[pil]==7.4.2
 Pillow==10.4.0
+email-validator==2.1.1

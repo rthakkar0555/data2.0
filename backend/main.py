@@ -23,6 +23,7 @@ import qrcode
 import json
 import io
 from PIL import Image
+from datetime import datetime
 
 load_dotenv()
 
@@ -42,21 +43,30 @@ app.add_middleware(
 )
 
 # Ensure uploads directory exists
-UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
+# Use /tmp for Vercel deployment, local path for development
+import platform
+if platform.system() == "Windows":
+    UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
+else:
+    UPLOAD_DIR = Path("/tmp/uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # -----------------------------
 # MongoDB setup
 # -----------------------------
-MONGODB_URI = os.getenv(
-    "MONGODB_URI",
-    "mongodb+srv://rishi:rishi123@cluster0.1tfj3.mongodb.net/datquest"
-)
-MONGODB_DB = os.getenv("MONGODB_DB", "datquest")
-MONGODB_COLLECTION = os.getenv("MONGODB_COLLECTION", "uploads")
+MONGODB_URI = os.getenv("MONGODB_URI")
+MONGODB_DB = os.getenv("MONGODB_DB")
+MONGODB_COLLECTION = os.getenv("MONGODB_COLLECTION")
 
 try:
-    mongo_client = MongoClient(MONGODB_URI)
+    mongo_client = MongoClient(
+        MONGODB_URI,
+        serverSelectionTimeoutMS=5000,  # 5 second timeout
+        connectTimeoutMS=10000,          # 10 second connection timeout
+        socketTimeoutMS=20000,           # 20 second socket timeout
+        maxPoolSize=10,                  # Limit connection pool size
+        retryWrites=True
+    )
     mongo_db = mongo_client[MONGODB_DB]
     mongo_collection = mongo_db[MONGODB_COLLECTION]
     # Test connection
@@ -72,9 +82,9 @@ except Exception as e:
 # Cloudinary setup
 # -----------------------------
 cloudinary.config(
-    cloud_name="rishiproject",
-    api_key="451394548967359",
-    api_secret="vQi8o9Cjypie4bHxvhrDSKdZjFs"
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
 def upload_to_cloudinary(file_path: str, public_id: str = None) -> dict:
@@ -294,12 +304,12 @@ async def upload_pdf(
             
             # Check if collection exists and create/recreate if needed
             qdrant_client = QdrantClient(
-                url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
+                url=os.getenv("QDRANT_URL"),
+                api_key=os.getenv("QDRANT_API_KEY")
             )
             
             collections = qdrant_client.get_collections()
-            collection_exists = any(col.name == 'learn_vector3' for col in collections.collections)
+            collection_exists = any(col.name == os.getenv("QDRANT_COLLECTION_NAME") for col in collections.collections)
             
             # Process documents in smaller batches to avoid timeout/memory issues
             batch_size = 50  # Smaller batch size for better reliability
@@ -307,14 +317,14 @@ async def upload_pdf(
             print(f"📊 Processing {total_docs} document chunks in batches of {batch_size}")
             
             if not collection_exists:
-                print("🆕 Creating new learn_vector3 collection...")
+                print(f"🆕 Creating new {os.getenv('QDRANT_COLLECTION_NAME')} collection...")
                 # Create collection for first time with first batch
                 first_batch = split_docs[:batch_size]
                 vector_store = QdrantVectorStore.from_documents(
                     documents=first_batch,
-                    url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
-                    collection_name='learn_vector3',
+                    url=os.getenv("QDRANT_URL"),
+                    api_key=os.getenv("QDRANT_API_KEY"),
+                    collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                     embedding=embedding_model
                 )
                 print(f"✅ Created collection with first {len(first_batch)} documents")
@@ -331,12 +341,12 @@ async def upload_pdf(
                             print(f"⚠️  Batch {i//batch_size + 2} failed: {batch_err}")
                             # Continue with next batch
             else:
-                print("📚 Adding documents to existing learn_vector3 collection...")
+                print(f"📚 Adding documents to existing {os.getenv('QDRANT_COLLECTION_NAME')} collection...")
                 # Add to existing collection
                 vector_store = QdrantVectorStore.from_existing_collection(
-                    url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
-                    collection_name='learn_vector3',
+                    url=os.getenv("QDRANT_URL"),
+                    api_key=os.getenv("QDRANT_API_KEY"),
+                    collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                     embedding=embedding_model
                 )
                 
@@ -550,25 +560,25 @@ async def upload_multiple_pdfs(
                 embedding_model = NVIDIANIMEmbeddings()
                 
                 qdrant_client = QdrantClient(
-                    url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
+                    url=os.getenv("QDRANT_URL"),
+                    api_key=os.getenv("QDRANT_API_KEY")
                 )
                 
                 collections = qdrant_client.get_collections()
-                collection_exists = any(col.name == 'learn_vector3' for col in collections.collections)
+                collection_exists = any(col.name == os.getenv("QDRANT_COLLECTION_NAME") for col in collections.collections)
                 
                 batch_size = 50
                 total_docs = len(all_split_docs)
                 print(f"📊 Processing {total_docs} document chunks from {len(files)} files in batches of {batch_size}")
                 
                 if not collection_exists:
-                    print("🆕 Creating new learn_vector3 collection...")
+                    print(f"🆕 Creating new {os.getenv('QDRANT_COLLECTION_NAME')} collection...")
                     first_batch = all_split_docs[:batch_size]
                     vector_store = QdrantVectorStore.from_documents(
                         documents=first_batch,
-                        url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                        api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
-                        collection_name='learn_vector3',
+                        url=os.getenv("QDRANT_URL"),
+                        api_key=os.getenv("QDRANT_API_KEY"),
+                        collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                         embedding=embedding_model
                     )
                     print(f"✅ Created collection with first {len(first_batch)} documents")
@@ -583,11 +593,11 @@ async def upload_multiple_pdfs(
                             except Exception as batch_err:
                                 print(f"⚠️  Batch {i//batch_size + 2} failed: {batch_err}")
                 else:
-                    print("📚 Adding documents to existing learn_vector3 collection...")
+                    print(f"📚 Adding documents to existing {os.getenv('QDRANT_COLLECTION_NAME')} collection...")
                     vector_store = QdrantVectorStore.from_existing_collection(
-                        url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                        api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM",
-                        collection_name='learn_vector3',
+                        url=os.getenv("QDRANT_URL"),
+                        api_key=os.getenv("QDRANT_API_KEY"),
+                        collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                         embedding=embedding_model
                     )
                     
@@ -777,8 +787,8 @@ async def delete_manual(
         # Delete from Qdrant DB using metadata filter
         try:
             qdrant_client = QdrantClient(
-                url="https://c475058e-3b7d-4e3b-9251-c57de1708cb1.eu-west-2-0.aws.cloud.qdrant.io:6333",
-                api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.lm1RZR5M1o9mplR0W0WJXHH_opdKpKEvkm5LxRO5waM"
+                url=os.getenv("QDRANT_URL"),
+                api_key=os.getenv("QDRANT_API_KEY")
             )
             
             # Try multiple approaches to find and delete the points
@@ -799,7 +809,7 @@ async def delete_manual(
                 )
                 
                 search_result = qdrant_client.scroll(
-                    collection_name="learn_vector3",
+                    collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                     scroll_filter=db_id_filter,
                     limit=10
                 )
@@ -809,7 +819,7 @@ async def delete_manual(
                 
                 if points_found > 0:
                     delete_result = qdrant_client.delete(
-                        collection_name="learn_vector3",
+                        collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                         points_selector=models.FilterSelector(filter=db_id_filter)
                     )
                     print(f"✅ Deleted {points_found} points using db_id with operation ID: {delete_result.operation_id}")
@@ -833,7 +843,7 @@ async def delete_manual(
                 )
                 
                 search_result = qdrant_client.scroll(
-                    collection_name="learn_vector3",
+                    collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                     scroll_filter=qdrant_filter,
                     limit=10
                 )
@@ -843,7 +853,7 @@ async def delete_manual(
                 
                 if points_found > 0:
                     delete_result = qdrant_client.delete(
-                        collection_name="learn_vector3",
+                        collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
                         points_selector=models.FilterSelector(filter=qdrant_filter)
                     )
                     print(f"\n\n\n\n\n\n\n\n\n\nn\n\n✅ Deleted {points_found} points using product_name/filename with operation ID: {delete_result.operation_id}\n\n\n\n\n\n\n\n\n\n\n\n\n")
@@ -869,6 +879,69 @@ async def delete_manual(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete operation failed: {str(e)}")
+
+@app.get("/health/")
+async def health_check():
+    """Health check endpoint to verify all services are working"""
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "services": {}
+    }
+    
+    # Check MongoDB
+    try:
+        if mongo_client:
+            mongo_client.admin.command('ping')
+            health_status["services"]["mongodb"] = "connected"
+        else:
+            health_status["services"]["mongodb"] = "disconnected"
+    except Exception as e:
+        health_status["services"]["mongodb"] = f"error: {str(e)}"
+    
+    # Check Cloudinary
+    try:
+        cloudinary_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+        if cloudinary_name:
+            health_status["services"]["cloudinary"] = "configured"
+        else:
+            health_status["services"]["cloudinary"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["cloudinary"] = f"error: {str(e)}"
+    
+    # Check Qdrant
+    try:
+        qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_key = os.getenv("QDRANT_API_KEY")
+        if qdrant_url and qdrant_key:
+            health_status["services"]["qdrant"] = "configured"
+        else:
+            health_status["services"]["qdrant"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["qdrant"] = f"error: {str(e)}"
+    
+    # Check NVIDIA
+    try:
+        nvidia_key = os.getenv("NVIDIA_API_KEY")
+        nvidia_url = os.getenv("NVIDIA_BASE_URL")
+        if nvidia_key and nvidia_url:
+            health_status["services"]["nvidia"] = "configured"
+        else:
+            health_status["services"]["nvidia"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["nvidia"] = f"error: {str(e)}"
+    
+    # Check JWT
+    try:
+        secret_key = os.getenv("SECRET_KEY")
+        if secret_key:
+            health_status["services"]["jwt"] = "configured"
+        else:
+            health_status["services"]["jwt"] = "not_configured"
+    except Exception as e:
+        health_status["services"]["jwt"] = f"error: {str(e)}"
+    
+    return health_status
 
 if __name__ == "__main__":
     import uvicorn

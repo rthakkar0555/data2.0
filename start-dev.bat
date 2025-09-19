@@ -3,7 +3,7 @@ echo Starting Manual Retrieval System...
 echo.
 
 echo Starting Backend Server...
-cd Rag_Manual_retrival\backend
+cd backend
 start "Backend Server" cmd /k "uvicorn main:app --reload --host 0.0.0.0 --port 8000"
 
 echo.
