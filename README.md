@@ -15,7 +15,7 @@ A full-stack application for uploading and querying PDF manuals using RAG (Retri
 - **Backend**: FastAPI with Python
 - **Vector Database**: Qdrant for document embeddings
 - **Database**: MongoDB for metadata storage
-- **AI**: OpenAI GPT-4o for responses
+- **AI**: NIM AI Support
 
 ## Setup Instructions
 
@@ -34,7 +34,7 @@ A full-stack application for uploading and querying PDF manuals using RAG (Retri
 3. Set up environment variables:
    Create a `.env` file in the backend directory with:
    ```
-   OPENAI_API_KEY=your_openai_api_key
+   NIM_api_key=nim api key
    MONGODB_URI=your_mongodb_connection_string
    MONGODB_DB=datquest
    MONGODB_COLLECTION=uploads
