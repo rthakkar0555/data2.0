@@ -15,7 +15,7 @@ export interface UploadResponse {
 export interface QueryRequest {
   query: string;
   company_name?: string;
-  product_code?: string;
+  product_name?: string;
 }
 
 export interface QueryResponse {

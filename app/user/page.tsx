@@ -212,11 +212,20 @@ export default function UserPage() {
           return
         }
         
-        const response = await apiService.query({
+        const requestData = {
           query: currentQuery,
           company_name: selectedCompany || undefined,
-          product_code: productCode || undefined
-        })
+          product_name: selectedProduct || undefined
+        }
+        
+        console.log("Sending query request:", requestData)
+        console.log("Debug - selectedCompany:", selectedCompany)
+        console.log("Debug - selectedProduct:", selectedProduct)
+        console.log("Debug - productCode:", productCode)
+        
+        const response = await apiService.query(requestData)
+        
+        console.log("Received response:", response)
         
         const botResponse = {
           type: "bot" as const,

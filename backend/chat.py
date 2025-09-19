@@ -53,8 +53,8 @@ conversation_memory = ConversationBufferMemory(
 
 class QueryRequest(BaseModel):
     query: str
-    company_name: str | None = None
-    product_code: str | None = None
+    company_name: str
+    product_name: str
     user_id: str | None = "default_user"  # For future multi-user support
 
 @router.get("/health/")
@@ -86,9 +86,16 @@ async def process_query(request: QueryRequest):
     try:
         query = request.query
         company_name = request.company_name
-        product_code = request.product_code
+        product_name = request.product_name
         user_id = request.user_id or "default_user"
-        logger.info(f"\n\n\n\ncompany_name: {company_name}, product_code: {product_code}, user_id: {user_id}\n\n\n\n")
+        
+        # Debug logging for received parameters
+        logger.info(f"\n\n\n\n\n\n\n\n\n\n=== RECEIVED PARAMETERS ===\n\n\n\n\n\n\n\n\n")
+        logger.info(f"query: '{query}'")
+        logger.info(f"company_name: '{company_name}' (type: {type(company_name)})")
+        logger.info(f"product_name: '{product_name}' (type: {type(product_name)})")
+        logger.info(f"user_id: '{user_id}'")
+        logger.info(f"==========================")
 
         # Embedding
         embedding_model = NVIDIANIMEmbeddings()
@@ -106,86 +113,58 @@ async def process_query(request: QueryRequest):
             raise HTTPException(status_code=400, detail=f"{str(e)} Vector database not available. Please ensure Qdrant is running and documents are uploaded.")
 
         # -----------------------------
-        # ✅ Metadata filtering
+        # ✅ Strict Metadata filtering - Both company_name and product_code required
         # -----------------------------
-        qdrant_filter = None
-        if company_name and product_code:
-            # Use dict-based filter (LangChain → Qdrant payload filter)
-            qdrant_filter = models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="metadata.company_name",
-                        match=models.MatchValue(value=company_name)
-                    ),
-                    models.FieldCondition(
-                        key="metadata.product_code",
-                        match=models.MatchValue(value=product_code)
-                    )
-                ]
-            )
-        elif company_name:
-            # If only company_name is provided, filter by company only
-            qdrant_filter = models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="metadata.company_name",
-                        match=models.MatchValue(value=company_name)
-                    )
-                ]
-            )
-
-        # Perform search with filter first
+        
+        # Check if both company_name and product_name are provided and not empty
+        if not company_name or not product_name or company_name.strip() == "" or product_name.strip() == "":
+            logger.warning(f"Missing or empty required parameters: company_name='{company_name}', product_name='{product_name}'")
+            raise HTTPException(status_code=400, detail="Both company_name and product_name are required to search for context.")
+        
+        logger.info(f"\n\n\n\n\n\n\n\n\n\ncompany_name: {company_name}, product_name: {product_name}\n\n\n\n\n\n\n\n\n\n")
+        
+        # Create strict filter requiring both company_name and product_name
+        qdrant_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="metadata.company_name",
+                    match=models.MatchValue(value=company_name)
+                ),
+                models.FieldCondition(
+                    key="metadata.product_name",
+                    match=models.MatchValue(value=product_name)
+                )
+            ]
+        )
+        
+        # Debug logging for filter
+        logger.info(f"Using filter: company_name='{company_name}', product_name='{product_name}'")
+        logger.info(f"Filter object: {qdrant_filter}")
+        
+        # Perform search with strict filter
         search_result = vector_db.similarity_search(query=query, k=8, filter=qdrant_filter)
         
-        # If no results with filter, try with broader search but still within the same company
-        if not search_result and qdrant_filter:
-            logger.warning(f"No results with specific filter, trying broader search within company: {company_name}")
-            # Try with just company filter if we had both company and product filters
-            if company_name and product_code:
-                company_only_filter = models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="metadata.company_name",
-                            match=models.MatchValue(value=company_name)
-                        )
-                    ]
-                )
-                search_result = vector_db.similarity_search(query=query, k=8, filter=company_only_filter)
-            
-        # Only if still no results and we have a company filter, try without any filter
-        if not search_result and company_name:
-            logger.warning(f"No results found for company {company_name}, trying without filter")
-            raise HTTPException(status_code=400, detail="No relevant information found in the uploaded documents.")
-            
+        # Debug logging
+        logger.info(f"Search result count: {len(search_result) if search_result else 0}")
+        if search_result:
+            logger.info(f"First result metadata: {search_result[0].metadata}")
+            logger.info(f"First result company: {search_result[0].metadata.get('company_name')}")
+            logger.info(f"First result product: {search_result[0].metadata.get('product_name')}")
+        
+        # If no results found with strict filter, return "no context found"
         if not search_result:
-            logger.warning(f"No relevant documents found for query: {query}")
-            raise HTTPException(status_code=400, detail="No relevant information found in the uploaded documents.")
+            logger.warning(f"No context found for company_name='{company_name}' and product_name='{product_name}'")
+            raise HTTPException(status_code=400, detail="No context found for the specified company and product combination.")
 
         logger.info(f"Found {len(search_result)} search results")
         logger.debug(f"Search result: {search_result}")
-
-        # Additional filtering: If we have both company_name and product_code, 
-        # only include results that match both (to prevent cross-contamination)
-        if company_name and product_code:
-            filtered_results = []
-            for result in search_result:
-                result_company = result.metadata.get('company_name')
-                result_product = result.metadata.get('product_code')
-                if result_company == company_name and result_product == product_code:
-                    filtered_results.append(result)
-            
-            if filtered_results:
-                search_result = filtered_results
-                logger.info(f"Filtered to {len(search_result)} results matching both company and product")
-            else:
-                logger.warning(f"No results match both company '{company_name}' and product '{product_code}'")
 
         # Format context (include metadata for debugging)
         context = "\n\n\n".join([
             f"page_content: {result.page_content}\n"
             f"page_label: {result.metadata.get('page_label')}\n"
             f"company_name: {result.metadata.get('company_name')}\n"
-            f"product_code: {result.metadata.get('product_code')}\n"
+            f"product_name: {result.metadata.get('product_name')}\n"
             f"source: {result.metadata.get('source')}\n"
             f"total_pages: {result.metadata.get('total_pages')}\n"
             f"page: {result.metadata.get('page')}"
@@ -359,4 +338,166 @@ async def get_conversation_history():
         }
     except Exception as e:
         logger.error(f"Error getting conversation history: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/debug/search/{company_name}/{product_name}")
+async def debug_search(company_name: str, product_name: str, query: str = "test"):
+    """Debug endpoint to test search without API processing"""
+    try:
+        logger.info(f"=== DEBUG SEARCH ===")
+        logger.info(f"company_name: '{company_name}'")
+        logger.info(f"product_name: '{product_name}'")
+        logger.info(f"query: '{query}'")
+        
+        # Initialize embedding model
+        embedding_model = NVIDIANIMEmbeddings()
+        
+        # Connect to Qdrant
+        vector_db = QdrantVectorStore.from_existing_collection(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY"),
+            collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
+            embedding=embedding_model
+        )
+        
+        # Create strict filter
+        qdrant_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="metadata.company_name",
+                    match=models.MatchValue(value=company_name)
+                ),
+                models.FieldCondition(
+                    key="metadata.product_name",
+                    match=models.MatchValue(value=product_name)
+                )
+            ]
+        )
+        
+        logger.info(f"Filter: {qdrant_filter}")
+        
+        # Perform search
+        search_result = vector_db.similarity_search(query=query, k=8, filter=qdrant_filter)
+        
+        logger.info(f"Search result count: {len(search_result) if search_result else 0}")
+        
+        if search_result:
+            result_data = []
+            for i, result in enumerate(search_result):
+                result_info = {
+                    "index": i,
+                    "company_name": result.metadata.get('company_name'),
+                    "product_name": result.metadata.get('product_name'),
+                    "source": result.metadata.get('source'),
+                    "page": result.metadata.get('page'),
+                    "content_preview": result.page_content[:100] + "..." if len(result.page_content) > 100 else result.page_content
+                }
+                result_data.append(result_info)
+                logger.info(f"Result {i}: company='{result.metadata.get('company_name')}', product='{result.metadata.get('product_name')}'")
+            
+            return {
+                "status": "success",
+                "count": len(search_result),
+                "results": result_data
+            }
+        else:
+            # Let's also try without filter to see what's available
+            logger.info("No results with filter, checking what's available...")
+            all_results = vector_db.similarity_search(query=query, k=20)
+            
+            available_data = []
+            companies = set()
+            products = set()
+            company_product_combinations = set()
+            
+            for result in all_results:
+                company = result.metadata.get('company_name', 'N/A')
+                product = result.metadata.get('product_name', 'N/A')
+                companies.add(company)
+                products.add(product)
+                company_product_combinations.add(f"{company}|{product}")
+                
+                available_data.append({
+                    "company_name": company,
+                    "product_name": product,
+                    "source": result.metadata.get('source'),
+                    "page": result.metadata.get('page'),
+                    "content_preview": result.page_content[:50] + "..." if len(result.page_content) > 50 else result.page_content
+                })
+            
+            # Check for exact matches with different cases
+            exact_matches = []
+            for combo in company_product_combinations:
+                stored_company, stored_product = combo.split('|')
+                if (stored_company.lower() == company_name.lower() and 
+                    stored_product.lower() == product_name.lower()):
+                    exact_matches.append(f"Found case-insensitive match: '{stored_company}' + '{stored_product}'")
+            
+            return {
+                "status": "no_results_with_filter",
+                "requested": {"company_name": company_name, "product_name": product_name},
+                "available_companies": sorted(list(companies)),
+                "available_products": sorted(list(products)),
+                "company_product_combinations": sorted(list(company_product_combinations)),
+                "exact_matches": exact_matches,
+                "sample_data": available_data[:10]  # First 10 results
+            }
+            
+    except Exception as e:
+        logger.error(f"Debug search error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/debug/all-data")
+async def debug_all_data():
+    """Debug endpoint to show all available data in the collection"""
+    try:
+        logger.info("=== DEBUG ALL DATA ===")
+        
+        # Initialize embedding model
+        embedding_model = NVIDIANIMEmbeddings()
+        
+        # Connect to Qdrant
+        vector_db = QdrantVectorStore.from_existing_collection(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY"),
+            collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
+            embedding=embedding_model
+        )
+        
+        # Get all data without any filter
+        all_results = vector_db.similarity_search(query="test", k=50)
+        
+        logger.info(f"Total documents found: {len(all_results)}")
+        
+        companies = set()
+        products = set()
+        company_product_combinations = set()
+        all_data = []
+        
+        for i, result in enumerate(all_results):
+            company = result.metadata.get('company_name', 'N/A')
+            product = result.metadata.get('product_name', 'N/A')
+            companies.add(company)
+            products.add(product)
+            company_product_combinations.add(f"{company}|{product}")
+            
+            all_data.append({
+                "index": i,
+                "company_name": company,
+                "product_name": product,
+                "source": result.metadata.get('source'),
+                "page": result.metadata.get('page'),
+                "content_preview": result.page_content[:100] + "..." if len(result.page_content) > 100 else result.page_content
+            })
+        
+        return {
+            "total_documents": len(all_results),
+            "unique_companies": sorted(list(companies)),
+            "unique_products": sorted(list(products)),
+            "company_product_combinations": sorted(list(company_product_combinations)),
+            "all_data": all_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug all data error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
