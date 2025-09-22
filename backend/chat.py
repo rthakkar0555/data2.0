@@ -200,11 +200,11 @@ async def process_query(request: QueryRequest):
                 )
                 # Take top 8 reranked results
                 search_result = reranked_chunks[:8]
-                logger.info(f"✅ \n\n\n\n\n\n\n\n\n\n\n\n\nReranking completed. Using top {len(search_result)} most relevant chunks")
+                logger.info(f"✅ Reranking completed. Using top {len(search_result)} most relevant chunks")
             else:
-                logger.warning("⚠️ \n\n\n\n\n\n\n\n\n\n\nNVIDIA reranker not available, using original search results")
+                logger.warning("⚠️ NVIDIA reranker not available, using original search results")
         except Exception as rerank_error:
-            logger.error(f"❌\n\n\n\n\n\n\n\n Reranking failed: {rerank_error}")
+            logger.error(f"❌ Reranking failed: {rerank_error}")
             logger.info("🔄 Continuing with original search results")
         
         logger.info(f"Final result count: {len(search_result)}")
