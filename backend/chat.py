@@ -10,15 +10,24 @@ from langchain.memory import ConversationBufferMemory
 from langchain.schema import BaseMessage, HumanMessage, AIMessage
 from dotenv import load_dotenv
 from openai import OpenAI
+from langchain_nvidia_ai_endpoints.reranking import NVIDIARerank
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Disable pymongo debug logs
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+logging.getLogger("pymongo.topology").setLevel(logging.WARNING)
+logging.getLogger("pymongo.connection").setLevel(logging.WARNING)
+logging.getLogger("pymongo.pool").setLevel(logging.WARNING)
+logging.getLogger("pymongo.server_selection").setLevel(logging.WARNING)
+
 load_dotenv()
 
 # Initialize NVIDIA NIM client lazily
 client = None
+reranker = None
 
 def get_nvidia_client():
     """Get or initialize NVIDIA client lazily"""
@@ -40,6 +49,22 @@ def get_nvidia_client():
             print(f"NVIDIA NIM client initialization failed: {e}")
             client = None
     return client
+
+def get_nvidia_reranker():
+    """Get or initialize NVIDIA reranker lazily"""
+    global reranker
+    if reranker is None:
+        try:
+            reranker = NVIDIARerank(
+                model=os.getenv("NVIDIA_RERANK_MODEL", "nvidia/llama-3.2-nv-rerankqa-1b-v2"),
+                base_url=os.getenv("NVIDIA_BASE_URL"),
+                nvidia_api_key=os.getenv("NVIDIA_API_KEY")
+            )
+            logger.info(f"✅ NVIDIA Reranker initialized successfully with model: {os.getenv('NVIDIA_RERANK_MODEL', 'nvidia/llama-3.2-nv-rerankqa-1b-v2')}")
+        except Exception as e:
+            logger.error(f"❌ NVIDIA Reranker initialization failed: {e}")
+            reranker = None
+    return reranker
 
 router = APIRouter()
 
@@ -76,7 +101,13 @@ async def health_check():
             messages=[{"role": "user", "content": "Test"}],
             max_tokens=1
         )  # Test NVIDIA NIM connection
-        return {"status": "healthy"}
+        
+        # Test NVIDIA reranker
+        nvidia_reranker = get_nvidia_reranker()
+        if nvidia_reranker is None:
+            raise Exception("NVIDIA Reranker not initialized")
+        
+        return {"status": "healthy", "reranker": "available"}
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
@@ -141,11 +172,11 @@ async def process_query(request: QueryRequest):
         logger.info(f"Using filter: company_name='{company_name}', product_name='{product_name}'")
         logger.info(f"Filter object: {qdrant_filter}")
         
-        # Perform search with strict filter
-        search_result = vector_db.similarity_search(query=query, k=8, filter=qdrant_filter)
+        # Perform search with strict filter - get more results for reranking
+        search_result = vector_db.similarity_search(query=query, k=15, filter=qdrant_filter)
         
         # Debug logging
-        logger.info(f"Search result count: {len(search_result) if search_result else 0}")
+        logger.info(f"Initial search result count: {len(search_result) if search_result else 0}")
         if search_result:
             logger.info(f"First result metadata: {search_result[0].metadata}")
             logger.info(f"First result company: {search_result[0].metadata.get('company_name')}")
@@ -156,8 +187,28 @@ async def process_query(request: QueryRequest):
             logger.warning(f"No context found for company_name='{company_name}' and product_name='{product_name}'")
             raise HTTPException(status_code=400, detail="No context found for the specified company and product combination.")
 
-        logger.info(f"Found {len(search_result)} search results")
-        logger.debug(f"Search result: {search_result}")
+        logger.info(f"Found {len(search_result)} search results before reranking")
+        
+        # Apply NVIDIA reranking for better context
+        try:
+            nvidia_reranker = get_nvidia_reranker()
+            if nvidia_reranker is not None:
+                logger.info("🔄 Applying NVIDIA reranking to improve context relevance...")
+                reranked_chunks = nvidia_reranker.compress_documents(
+                    query=query,
+                    documents=search_result
+                )
+                # Take top 8 reranked results
+                search_result = reranked_chunks[:8]
+                logger.info(f"✅ Reranking completed. Using top {len(search_result)} most relevant chunks")
+            else:
+                logger.warning("⚠️ NVIDIA reranker not available, using original search results")
+        except Exception as rerank_error:
+            logger.error(f"❌ Reranking failed: {rerank_error}")
+            logger.info("🔄 Continuing with original search results")
+        
+        logger.info(f"Final result count: {len(search_result)}")
+        logger.debug(f"Final search result: {search_result}")
 
         # Format context (include metadata for debugging)
         context = "\n\n\n".join([
@@ -209,6 +260,8 @@ async def process_query(request: QueryRequest):
         ## Formatting Requirements:
         - Use clear Markdown structure with proper hierarchy
         - Start with a main heading using # (single hash)
+        - only give the answer of the query, do not give any other information 
+        - the ans should be in the same langage as user and if user specificaly has mentioned to give ans in hindi or gujrati then give ans
         - Use ## for major sections, ### for subsections
         - Use numbered lists (1., 2., 3.) for step-by-step instructions
         - Use bullet points (- or *) for features, tips, or general information
@@ -217,7 +270,7 @@ async def process_query(request: QueryRequest):
         - Use > blockquotes for important safety warnings or notes
         - Separate each step with a blank line for better readability
         - Use horizontal rules (---) to separate major sections
-        - Include page labels directly beside information in parentheses: (Page X)
+        - must Include page labels directly beside information in parentheses: (Page X)
         - DO NOT include a "Reference Documents" section - this will be added automatically
         - NEVER include PDF URLs inline with content or at the end
 
@@ -278,7 +331,7 @@ async def process_query(request: QueryRequest):
         response = nvidia_client.chat.completions.create(
             model=os.getenv("NVIDIA_CHAT_MODEL"),
             messages=messages,
-            temperature=0.5,
+            temperature=0.8,
             top_p=1,
             max_tokens=1024
         )
@@ -376,10 +429,28 @@ async def debug_search(company_name: str, product_name: str, query: str = "test"
         
         logger.info(f"Filter: {qdrant_filter}")
         
-        # Perform search
-        search_result = vector_db.similarity_search(query=query, k=8, filter=qdrant_filter)
+        # Perform search - get more results for reranking
+        search_result = vector_db.similarity_search(query=query, k=15, filter=qdrant_filter)
         
-        logger.info(f"Search result count: {len(search_result) if search_result else 0}")
+        logger.info(f"Initial search result count: {len(search_result) if search_result else 0}")
+        
+        # Apply reranking if available
+        try:
+            nvidia_reranker = get_nvidia_reranker()
+            if nvidia_reranker is not None:
+                logger.info("🔄 Applying NVIDIA reranking for debug...")
+                reranked_chunks = nvidia_reranker.compress_documents(
+                    query=query,
+                    documents=search_result
+                )
+                search_result = reranked_chunks[:8]  # Take top 8
+                logger.info(f"✅ Reranking completed. Using top {len(search_result)} results")
+            else:
+                logger.warning("⚠️ NVIDIA reranker not available for debug")
+        except Exception as rerank_error:
+            logger.error(f"❌ Reranking failed in debug: {rerank_error}")
+        
+        logger.info(f"Final search result count: {len(search_result) if search_result else 0}")
         
         if search_result:
             result_data = []
@@ -500,4 +571,123 @@ async def debug_all_data():
         
     except Exception as e:
         logger.error(f"Debug all data error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/debug/reranking/{company_name}/{product_name}")
+async def debug_reranking(company_name: str, product_name: str, query: str = "test query"):
+    """Debug endpoint to test reranking functionality"""
+    try:
+        logger.info(f"=== DEBUG RERANKING ===")
+        logger.info(f"company_name: '{company_name}'")
+        logger.info(f"product_name: '{product_name}'")
+        logger.info(f"query: '{query}'")
+        
+        # Initialize embedding model
+        embedding_model = NVIDIANIMEmbeddings()
+        
+        # Connect to Qdrant
+        vector_db = QdrantVectorStore.from_existing_collection(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY"),
+            collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
+            embedding=embedding_model
+        )
+        
+        # Create strict filter
+        qdrant_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="metadata.company_name",
+                    match=models.MatchValue(value=company_name)
+                ),
+                models.FieldCondition(
+                    key="metadata.product_name",
+                    match=models.MatchValue(value=product_name)
+                )
+            ]
+        )
+        
+        # Get initial search results
+        initial_results = vector_db.similarity_search(query=query, k=15, filter=qdrant_filter)
+        logger.info(f"Initial search results: {len(initial_results)}")
+        
+        if not initial_results:
+            return {
+                "status": "no_results",
+                "message": "No documents found for the specified company and product"
+            }
+        
+        # Test reranking
+        reranking_info = {
+            "reranker_available": False,
+            "reranking_successful": False,
+            "error": None
+        }
+        
+        try:
+            nvidia_reranker = get_nvidia_reranker()
+            if nvidia_reranker is not None:
+                reranking_info["reranker_available"] = True
+                logger.info("Testing reranking...")
+                
+                reranked_chunks = nvidia_reranker.compress_documents(
+                    query=query,
+                    documents=initial_results
+                )
+                
+                reranking_info["reranking_successful"] = True
+                logger.info(f"Reranking successful. Got {len(reranked_chunks)} reranked chunks")
+                
+                # Compare original vs reranked order
+                original_order = [i for i in range(len(initial_results))]
+                reranked_order = []
+                
+                for reranked_chunk in reranked_chunks:
+                    for i, original_chunk in enumerate(initial_results):
+                        if (reranked_chunk.page_content == original_chunk.page_content and 
+                            reranked_chunk.metadata == original_chunk.metadata):
+                            reranked_order.append(i)
+                            break
+                
+                return {
+                    "status": "success",
+                    "initial_count": len(initial_results),
+                    "reranked_count": len(reranked_chunks),
+                    "reranking_info": reranking_info,
+                    "original_order": original_order,
+                    "reranked_order": reranked_order,
+                    "order_changed": original_order != reranked_order,
+                    "sample_results": [
+                        {
+                            "index": i,
+                            "content_preview": chunk.page_content[:100] + "..." if len(chunk.page_content) > 100 else chunk.page_content,
+                            "metadata": chunk.metadata
+                        }
+                        for i, chunk in enumerate(reranked_chunks[:5])  # Show top 5
+                    ]
+                }
+            else:
+                reranking_info["error"] = "NVIDIA reranker not initialized"
+                logger.warning("NVIDIA reranker not available")
+                
+        except Exception as rerank_error:
+            reranking_info["error"] = str(rerank_error)
+            logger.error(f"Reranking test failed: {rerank_error}")
+        
+        return {
+            "status": "reranking_failed",
+            "initial_count": len(initial_results),
+            "reranking_info": reranking_info,
+            "sample_results": [
+                {
+                    "index": i,
+                    "content_preview": chunk.page_content[:100] + "..." if len(chunk.page_content) > 100 else chunk.page_content,
+                    "metadata": chunk.metadata
+                }
+                for i, chunk in enumerate(initial_results[:5])  # Show top 5 original results
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug reranking error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

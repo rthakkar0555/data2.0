@@ -17,3 +17,4 @@ instructor==1.11.3
 qrcode[pil]==7.4.2
 Pillow==10.4.0
 email-validator==2.1.1
+langchain-nvidia-ai-endpoints==0.1.0
