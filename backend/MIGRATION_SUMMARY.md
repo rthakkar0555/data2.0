@@ -8,7 +8,7 @@ Successfully migrated the RAG system from OpenAI to NVIDIA NIM API while maintai
 ### 1. LLM Model Migration
 - **From**: OpenAI GPT-4o
 - **To**: NVIDIA Llama-3.1-Nemotron-70B-Instruct
-- **API Key**: `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`
+- **API Key**: ``
 - **Base URL**: `https://integrate.api.nvidia.com/v1`
 
 ### 2. Embedding Model Migration
