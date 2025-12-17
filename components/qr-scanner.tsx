@@ -125,7 +125,6 @@ export function QRScanner({ isOpen, onClose, onScanSuccess }: QRScannerProps) {
       
       setScannedData(parsedData)
       setIsScanning(false)
-      toast.success('QR code scanned successfully!')
     } catch (err) {
       console.error('Error parsing QR code:', err)
       setError('Invalid QR code format. Please scan a valid QR code.')

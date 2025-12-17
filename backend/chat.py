@@ -38,15 +38,18 @@ def get_nvidia_client():
                 base_url=os.getenv("NVIDIA_BASE_URL"),
                 api_key=os.getenv("NVIDIA_API_KEY")
             )
-            # Test the client
-            client.chat.completions.create(
-                model=os.getenv("NVIDIA_CHAT_MODEL"),
-                messages=[{"role": "user", "content": "Test"}],
-                max_tokens=1
-            )
-            print("NVIDIA NIM client initialized successfully")
+            # List available models (non-blocking)
+            try:
+                resp = client.models.list()
+                logger.debug(f"Available NVIDIA models: {[m.id for m in resp.data[:10]]}...")
+            except Exception as list_error:
+                logger.warning(f"Could not list NVIDIA models: {list_error}")
+            
+            # Skip the test request - let actual usage handle errors
+            # This prevents initialization failure due to model availability issues
+            logger.info("NVIDIA NIM client initialized (test skipped)")
         except Exception as e:
-            print(f"NVIDIA NIM client initialization failed: {e}")
+            logger.error(f"NVIDIA NIM client initialization failed: {e}")
             client = None
     return client
 
@@ -54,17 +57,33 @@ def get_nvidia_reranker():
     """Get or initialize NVIDIA reranker lazily"""
     global reranker
     if reranker is None:
+        rerank_model = os.getenv("NVIDIA_RERANK_MODEL")
+        if not rerank_model:
+            logger.warning("⚠️ NVIDIA_RERANK_MODEL not set in environment variables. Reranking will be disabled.")
+            return None
         try:
             reranker = NVIDIARerank(
-                model=os.getenv("NVIDIA_RERANK_MODEL", "nvidia/llama-3.2-nv-rerankqa-1b-v2"),
+                model=rerank_model,
                 base_url=os.getenv("NVIDIA_BASE_URL"),
                 nvidia_api_key=os.getenv("NVIDIA_API_KEY")
             )
-            logger.info(f"✅ NVIDIA Reranker initialized successfully with model: {os.getenv('NVIDIA_RERANK_MODEL', 'nvidia/llama-3.2-nv-rerankqa-1b-v2')}")
+            logger.info(f"✅ NVIDIA Reranker initialized successfully with model: {rerank_model}")
         except Exception as e:
             logger.error(f"❌ NVIDIA Reranker initialization failed: {e}")
             reranker = None
     return reranker
+
+def get_available_nvidia_models():
+    """Get list of available NVIDIA models for debugging"""
+    try:
+        nvidia_client = get_nvidia_client()
+        if nvidia_client is None:
+            return []
+        resp = nvidia_client.models.list()
+        return [m.id for m in resp.data]
+    except Exception as e:
+        logger.warning(f"Could not list NVIDIA models: {e}")
+        return []
 
 router = APIRouter()
 
@@ -84,33 +103,67 @@ class QueryRequest(BaseModel):
 
 @router.get("/health/")
 async def health_check():
+    health_status = {
+        "status": "healthy",
+        "qdrant": "unknown",
+        "nvidia_client": "unknown",
+        "nvidia_model_test": "unknown",
+        "reranker": "unknown"
+    }
+    
     try:
+        # Test Qdrant connection
         from qdrant_client import QdrantClient
         qdrant = QdrantClient(
             url=os.getenv("QDRANT_URL"),
             api_key=os.getenv("QDRANT_API_KEY")
         )
-        qdrant.get_collections()  # Test Qdrant connection
-        
+        qdrant.get_collections()
+        health_status["qdrant"] = "available"
+    except Exception as e:
+        logger.error(f"Qdrant health check failed: {str(e)}")
+        health_status["qdrant"] = f"error: {str(e)}"
+        health_status["status"] = "degraded"
+    
+    try:
+        # Check NVIDIA client initialization
         nvidia_client = get_nvidia_client()
         if nvidia_client is None:
-            raise Exception("NVIDIA NIM client not initialized")
-        
-        nvidia_client.chat.completions.create(
-            model=os.getenv("NVIDIA_CHAT_MODEL"),
-            messages=[{"role": "user", "content": "Test"}],
-            max_tokens=1
-        )  # Test NVIDIA NIM connection
-        
+            health_status["nvidia_client"] = "not initialized"
+            health_status["status"] = "degraded"
+        else:
+            health_status["nvidia_client"] = "initialized"
+            
+            # Test model availability (non-blocking)
+            try:
+                nvidia_client.chat.completions.create(
+                    model=os.getenv("NVIDIA_CHAT_MODEL"),
+                    messages=[{"role": "user", "content": "Test"}],
+                    max_tokens=1
+                )
+                health_status["nvidia_model_test"] = "available"
+            except Exception as model_error:
+                logger.warning(f"NVIDIA model test failed: {model_error}")
+                health_status["nvidia_model_test"] = f"error: {str(model_error)}"
+                health_status["status"] = "degraded"
+    except Exception as e:
+        logger.error(f"NVIDIA client health check failed: {str(e)}")
+        health_status["nvidia_client"] = f"error: {str(e)}"
+        health_status["status"] = "degraded"
+    
+    try:
         # Test NVIDIA reranker
         nvidia_reranker = get_nvidia_reranker()
         if nvidia_reranker is None:
-            raise Exception("NVIDIA Reranker not initialized")
-        
-        return {"status": "healthy", "reranker": "available"}
+            health_status["reranker"] = "not available"
+        else:
+            health_status["reranker"] = "available"
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+        logger.warning(f"Reranker health check failed: {str(e)}")
+        health_status["reranker"] = f"error: {str(e)}"
+    
+    # Return 200 even if degraded, so monitoring can see the status
+    return health_status
 
 @router.post("/query/")
 async def process_query(request: QueryRequest):
@@ -328,13 +381,52 @@ async def process_query(request: QueryRequest):
         if nvidia_client is None:
             raise HTTPException(status_code=500, detail="NVIDIA NIM client not initialized")
         
-        response = nvidia_client.chat.completions.create(
-            model=os.getenv("NVIDIA_CHAT_MODEL"),
-            messages=messages,
-            temperature=0.8,
-            top_p=1,
-            max_tokens=1024
-        )
+        nvidia_model = os.getenv("NVIDIA_CHAT_MODEL")
+        if not nvidia_model:
+            raise HTTPException(status_code=500, detail="NVIDIA_CHAT_MODEL environment variable not set")
+        
+        try:
+            response = nvidia_client.chat.completions.create(
+                model=nvidia_model,
+                messages=messages,
+                temperature=0.8,
+                top_p=1,
+                max_tokens=1024
+            )
+        except Exception as api_error:
+            error_msg = str(api_error)
+            logger.error(f"NVIDIA API error: {error_msg}", exc_info=True)
+            
+            # Check for specific error types
+            if "404" in error_msg or "Not Found" in error_msg:
+                # Try to get available models for better error message
+                available_models = get_available_nvidia_models()
+                available_nvidia_models = [m for m in available_models if m.startswith("nvidia/")][:10]
+                
+                error_detail = f"NVIDIA model '{nvidia_model}' not found or not available for your account."
+                if available_nvidia_models:
+                    error_detail += f" Available NVIDIA models include: {', '.join(available_nvidia_models)}"
+                error_detail += " Please check your NVIDIA API configuration and model name."
+                
+                raise HTTPException(
+                    status_code=404,
+                    detail=error_detail
+                )
+            elif "401" in error_msg or "Unauthorized" in error_msg:
+                raise HTTPException(
+                    status_code=401,
+                    detail="NVIDIA API authentication failed. Please check your NVIDIA_API_KEY."
+                )
+            elif "403" in error_msg or "Forbidden" in error_msg:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied to NVIDIA API. Please check your account permissions."
+                )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"NVIDIA API error: {error_msg}"
+                )
 
         # Get the AI response
         ai_response = response.choices[0].message.content
